@@ -1,0 +1,23 @@
+# Generated packages and runtime evidence
+# packages/*.zip 是派生物，tools/package_skill.py 可随时再生；
+# 仅保留 manifest.json / sha256 作为发布凭据入版本库。
+dist/
+packages/*.zip
+_runtime/
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Local credentials/configuration
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
