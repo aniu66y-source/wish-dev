@@ -71,17 +71,17 @@ powershell -NoProfile -File "<skill>/scripts/setup-opencode-paths.ps1" [-Service
 
 最小意图：
 
-```text
+~~~text
 model: "<provider-id>/<model-id>"   # 默认模型，选择器语法 provider/modelID
 <provider 块>:
   端点 baseURL（settings 或 options）
   凭据 apiKey → 用 {env:VAR} 占位，不在文件里写明文
   models.<model-id>.modelID → 发给 API 的真实模型名
-```
+~~~
 
 主推示例（当前官方 schema：`providers` 复数 + `settings`，密钥走 `{env:VAR}`）：
 
-```jsonc
+~~~json
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "myprov/model-a",
@@ -92,11 +92,11 @@ model: "<provider-id>/<model-id>"   # 默认模型，选择器语法 provider/mo
     }
   }
 }
-```
+~~~
 
 兼容旧版写法（部分 CLI 1.19.x 实际以 `provider` 单数 + `npm` + `options` 读取，如本机 `debug config` 所示）：
 
-```jsonc
+~~~json
 {
   "model": "myprov/model-a",
   "provider": {
@@ -109,7 +109,7 @@ model: "<provider-id>/<model-id>"   # 默认模型，选择器语法 provider/mo
     }
   }
 }
-```
+~~~
 
 要点：
 

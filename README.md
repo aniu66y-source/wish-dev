@@ -3,7 +3,7 @@
 > 用户给需求 → OpenCode + OMO 协调者动态分包并行 → 可验收、可维护的交付物。
 > 采用通用 Agent Skills 目录结构，适用于**任意支持工具调用的 agent 软件宿主**（Windows 首选）。
 
-- 当前版本 **1.3.2**（以 [SKILL.md](SKILL.md) frontmatter 为准）
+- 当前版本 **1.3.3**（以 [SKILL.md](SKILL.md) frontmatter 为准）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 
@@ -50,24 +50,6 @@
 | 10 | 部署准备与发布 | 可复现构建、配置/迁移/备份/回退 |
 | 11 | 上线验收与运行观察 | 目标环境核心路径、有界首轮观察 |
 | 12 | 交工与维护交接 | 交付物、验收证据、维护说明 |
-
-```mermaid
-flowchart LR
-  1[需求] --> 2[调查]
-  2 --> 3[产品+验收]
-  3 --> 4[选型/成本]
-  4 --> 5[UI/UE]
-  5 --> 6[架构/数据]
-  6 --> 7[工程/计划]
-  7 --> 8[分包并行]
-  8 --> 9[集成/评审]
-  9 --> 10[部署/发布]
-  10 --> 11[上线观察]
-  11 --> 12[交工]
-  8 -. 修复回流 .-> 8
-  10 -. 发布后观察 .-> 11
-  9 -. 缺陷闭环 .-> 8
-```
 
 **裁剪规则**：阶段 1、12 恒做；2–11 按交付物类型裁剪。详见 [阶段裁剪判定](references/lifecycle.md#阶段裁剪判定)。
 
