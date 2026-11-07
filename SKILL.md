@@ -2,7 +2,7 @@
 name: wish-dev
 description: 用于用户提出软件开发愿望、要求许愿式开发或续做已有交付任务时。适用于新软件落地及现有项目功能交付；仅安装或配置技能时不启动产品开发，普通问答及单纯审查不进入完整开发循环。
 metadata:
-  version: "1.2.0"
+  version: "1.2.1"
   language: "zh-CN"
   runtime: "OpenCode with OMO plugin; MCP or optional Python 3.10+ bridge; Node 18+ for plan gate"
 ---

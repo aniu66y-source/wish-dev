@@ -1,8 +1,8 @@
 # wish-dev · 许愿式开发
 
-当前版本 **1.2.0**：以公司 1.1.2 为主干，合并家里实际安装版 1.0.4 的调研、机器计划、恢复与收尾规则。源码是维护入口，安装副本不会自动更新。
+当前源码版本 **1.2.1**（修订/优化版：仓库 git 化、新增运行环境就绪检测 `setup-bootstrap`、模型配置示例对齐官方 schema 并修正命令名、本机核实记录）。版本说明以 SKILL.md frontmatter 为准。
 
-版本包：[wish-dev-1.2.0.zip](packages/wish-dev-1.2.0.zip) · [文件清单](packages/wish-dev-1.2.0.manifest.json) · [SHA-256](packages/wish-dev-1.2.0.sha256)。packages/ 保存明确发布的版本包，dist/ 仍是忽略的本地打包目录；仅生成 ZIP 不会安装到 WorkBuddy。
+最新发布包为 **1.2.0** 快照：[wish-dev-1.2.0.zip](packages/wish-dev-1.2.0.zip) · [文件清单](packages/wish-dev-1.2.0.manifest.json) · [SHA-256](packages/wish-dev-1.2.0.sha256)。packages/ 保存明确发布的版本包（1.2.0 起 zip 不入 Git，仅 manifest/sha256 作发布凭据）；1.2.1 的发布包在需要发布时从当前源码重新打包生成，dist/ 仍是忽略的本地打包目录；仅生成 ZIP 不会安装到 WorkBuddy。
 
 用户给需求，由协调者组织 OpenCode＋Oh My OpenAgent（OMO），持续完成产品梳理、技术选型、UI＋UE、架构、工程、分包开发、测试、部署上线和维护交接。
 

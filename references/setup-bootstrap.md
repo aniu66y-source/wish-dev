@@ -9,8 +9,8 @@
 | 层级 | 检测方式 | 就绪标志 |
 |---|---|---|
 | 1. OpenCode CLI | `opencode --version` | 输出版本号 |
-| 2. OMO 插件 | 读 OpenCode 配置（`opencode --print-config` 或 `~/.config/opencode/opencode.jsonc`）中 plugins 字段 | 含 `oh-my-openagent`（或旧名 `oh-my-opencode`）且版本可见 |
-| 3. 模型配置 | 读配置 `model` 字段与 provider 块（字段名随版本：旧版 `provider`/`npm`/`options`/`headers`/`env`，新版 `providers`/`package`/`settings`）；凭据须为 `{env:VAR}` 占位或经 `env` 列表引用 | 有默认 `model`（`providerID/modelID`）且对应 provider 可解析、凭据走环境变量且该变量已设 |
+| 2. OMO 插件 | 读 OpenCode 配置（`opencode debug config` 或 `~/.config/opencode/opencode.jsonc`）中 plugin/plugins 字段 | 含 `oh-my-openagent`（或旧名 `oh-my-opencode`）且版本可见 |
+| 3. 模型配置 | 读配置 `model` 字段与 provider 块（当前官方 schema：`providers` 复数 + `settings`；旧版兼容写法：`provider` 单数 + `npm` + `options`，以 `opencode debug config` 输出为准）；凭据须为 `{env:VAR}` 占位 | 有默认 `model`（`providerID/modelID`）且对应 provider 可解析、凭据走环境变量且该变量已设 |
 | 4. OMO 运行时可调用 | 宿主工具索引中确认 OMO 协调/子代理工具条目存在 | 工具 schema 可查 |
 | 5. Node ≥ 18 | `node --version` | 版本号 ≥ 18（check-plan.mjs 门禁依赖） |
 | 6. 服务通道（可选） | MCP 路径：宿主工具索引含 OpenCode MCP；CLI 路径：`python scripts/opencode_bridge.py --check` 通过 | 对应通道可达 |
@@ -19,20 +19,36 @@
 
 ## 模型配置引导（第 3 层缺失时）
 
-模型凭据与版本以实际探测为准，不写死 provider/model，也不假设某个字段名（旧版与新版 OpenCode 字段不同，以 [官方配置文档](https://opencode.ai/docs/config/) 与本机实际 `opencode --print-config` 为准）。配置写在 `~/.config/opencode/opencode.jsonc`（或项目级），最小意图：
+模型凭据与版本以实际探测为准，不写死 provider/model。配置写在 `~/.config/opencode/opencode.jsonc`（或项目级）。当前官方 schema 用 `providers`（复数）+ `settings`；旧版 CLI 可能以 `provider`（单数）+ `npm` + `options` 写入。以 [官方配置文档](https://opencode.ai/docs/config/) 与本机 `opencode debug config` 输出为准，不假设固定字段名。
+
+最小意图：
 
 ```text
 model: "<provider-id>/<model-id>"   # 默认模型，选择器语法 provider/modelID
 <provider 块>:
-  端点 baseURL
+  端点 baseURL（settings 或 options）
   凭据 apiKey → 用 {env:VAR} 占位，不在文件里写明文
   models.<model-id>.modelID → 发给 API 的真实模型名
 ```
 
-两套常见字段名（按版本取其一，勿混用）：
+主推示例（当前官方 schema：`providers` 复数 + `settings`，密钥走 `{env:VAR}`）：
 
 ```jsonc
-// 旧版（provider 单数 + npm + options + headers + env）
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "myprov/model-a",
+  "providers": {
+    "myprov": {
+      "settings": { "baseURL": "https://<端点>/v1", "apiKey": "{env:MYPROV_API_KEY}" },
+      "models": { "model-a": { "modelID": "model-a" } }
+    }
+  }
+}
+```
+
+兼容旧版写法（部分 CLI 1.19.x 实际以 `provider` 单数 + `npm` + `options` 读取，如本机 `debug config` 所示）：
+
+```jsonc
 {
   "model": "myprov/model-a",
   "provider": {
@@ -47,24 +63,11 @@ model: "<provider-id>/<model-id>"   # 默认模型，选择器语法 provider/mo
 }
 ```
 
-```jsonc
-// 新版（providers 复数 + package + settings.apiKey）
-{
-  "model": "myprov/model-a",
-  "providers": {
-    "myprov": {
-      "package": "@opencode/ai/providers/openai-compatible",
-      "settings": { "baseURL": "https://<端点>/v1", "apiKey": "{env:MYPROV_API_KEY}" },
-      "models": { "model-a": { "modelID": "model-a" } }
-    }
-  }
-}
-```
-
 要点：
 
-- **凭据一律 `{env:VAR}` 引用环境变量，不写明文密钥**；同时 `env`（旧版）/`settings.apiKey`（新版）指向的变量须在用户/系统环境变量中就位。缺失时提示用户在环境变量设置，不在配置文件、脚本或仓库落盘。
+- **凭据一律 `{env:VAR}` 引用环境变量，不写明文密钥**；无论新旧写法，指向的环境变量须在用户/系统层级就位。缺失时提示用户在环境变量设置，不在配置文件、脚本或仓库落盘。
 - 已有可用 provider/认证时沿用，不重复配置、不覆盖既有路由，不为此改全局设置。
+- 不确定当前 CLI 用哪套键时，先 `opencode debug config`（只读）看归一化结果；改配置本身须授权后再做，并在改动后用同一命令复核。
 
 ## 缺失补齐（须授权后执行）
 
