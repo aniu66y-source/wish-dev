@@ -10,6 +10,15 @@
 - 启动器先检查服务就绪，再读取固定的 DPAPI 服务密码；普通重启不应轮换密码。401 先核对本机连接凭据；不要因此改腾讯模型 Key。不得打印秘密、完整配置、环境或认证文件。
 - 项目 directory 使用真实绝对路径；本机配置 providerID=codebuddy、modelID=deepseek-v4.1-flash。默认继承主代理；旧记录名称为 Sisyphus - ultraworker，显式选择前用实际 agent list 核对。
 
+## 最近核实（2026-11-08，只读）
+
+对 `setup-bootstrap` 六层做只读实测，结果全量 PASS；以下为对齐结论，仅供后续核对，不替代调用时重新探测：
+
+- CLI 现为 `opencode 1.19.5`（较 10-26 快照 1.19.4 已漂移）；Node `v22.22.2`。
+- OMO 经 `omo-compatible` 本地 dist 的 file 路径加载，`default_agent=sisyphus`；平台二进制 `@opentui/core-win32-x64` 就位。
+- 模型 `codebuddy/deepseek-v4.1-flash`；凭据走 `{env:CODEBUDDY_API_KEY}` 占位，该变量 User 级已设，配置文件内无明文密钥。
+- **4096 归属对齐**：监听 PID == `server-instance.json` 的 `serverPid`（同为 npm 全局 `opencode.exe`），判定为**非孤儿**健全态；`/health` 返回 401 = 服务存活且需鉴权，符合预期。登录任务 `State=Ready` 只是 spawn 包装体正常退出（LastResult 0xC000013a），不影响服务本身，**无需 4 步重启**。B 方案 pre-check 在此状态下会直接放行。
+
 ## 有界恢复
 
 先检查服务和端口归属。确认无监听时才通过现有恢复入口启动一次，随后有界检查健康版本、监听可执行文件、任务 Running 及实例归属；已有监听不再起第二实例。服务在线却本机鉴权失败时检查连接器凭据；工具索引消失时真正重连 MCP 一次，新建聊天不一定有效。
