@@ -40,6 +40,10 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 公司旧模板 ready → pending、review → verifying、integrated → done；迁移须逐包核实真实进度、原始 ID、实际证据及评审，保留历史映射，不批量改名后当成通过。旧 done 无当前证据则回到 verifying/pending。家里 schema 1 和 S-ID 保留，不重建任务。
 
+## 宏观状态归属
+
+prd.json 只承载 task 级字段（status/attempts/evidence/review 等），不新增 `overall_status` 一类的宏观字段。整体状态（active / needs-user / interrupted / ready-for-acceptance / delivered）由协调者对照真实证据判定，记在 [workflow.md](workflow.md) 账本与 `progress.md` 的固定章节，不写进 prd.json。原因：宏观态若落成 prd.json 字段，会被执行者自填自封（例如提前写 delivered），违背「字段只证明结构、不判定交工」的原则。检查器的 `final_acceptance` 仅是「全部包已 done、可发起整体验收」的提示，不代表已验收或已交工；实际交工须对照全部必须验收项与真实证据，且整体状态只有协调者可置 delivered。
+
 ## 恢复与熔断记录
 
 沿用 `progress.md`，每次修复发起前持久增加 `prd.json` 的 `attempts`，结果出来后追加：`时间 | task ID | attempts | no_progress_count | root_cause及same_cause_failures | last_meaningful_progress | blocked_reason | resume_condition | job/session ID`。初值为 0/无；续做读取最新记录并对照历史，不因新聊天、换代理或回退状态而清零。每次验收同时记录 [workflow.md](workflow.md) 要求的代码基线。
