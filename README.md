@@ -1,73 +1,152 @@
 # wish-dev · 许愿式开发
 
-当前源码版本 **1.3.2**（数据目录统一：新增可选第 7 层，`setup-opencode-paths.ps1` 把 OpenCode 的 data/cache/config/state 归到单一 root，E→D→C 降级、幂等迁移、写入 4 个 XDG 环境变量；非硬门控，不影响开工）。1.3.1 通道收敛：开发通道**仅用 OpenCode MCP**，去掉 CLI 桥接兜底；门控不通先定位根因有界修复，修不通记 blocker 不开工；`opencode_bridge.py` 降级为离线自检/诊断脚本。1.3.0 行为变更：环境缺失时自动补齐工具链（OpenCode CLI/OMO/Node/MCP）与模型非敏感配置，仅敏感密钥交用户；固化 Windows agent + 工具调用前提；安装失败不硬闯记 blocker。版本说明以 SKILL.md frontmatter 为准。
+> 用户给需求 → OpenCode + OMO 协调者动态分包并行 → 可验收、可维护的交付物。
+> 采用通用 Agent Skills 目录结构，适用于**任意支持工具调用的 agent 软件宿主**（Windows 首选）。
 
-最新发布包为 **1.3.2**，产物（zip / manifest / SHA-256）统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)：[wish-dev-1.3.2.zip](https://github.com/aniu66y-source/wish-dev/releases/download/v1.3.2/wish-dev-1.3.2.zip) · [文件清单](https://github.com/aniu66y-source/wish-dev/releases/download/v1.3.2/wish-dev-1.3.2.manifest.json) · [SHA-256](https://github.com/aniu66y-source/wish-dev/releases/download/v1.3.2/wish-dev-1.3.2.sha256)。本仓 git 树**不保存任何打包产物**（`packages/` 整目录不入 Git）；需要某版本去 Releases 下载，校验用对应 manifest/sha256。更早版本（1.3.1 / 1.2.0）见 [Releases](https://github.com/aniu66y-source/wish-dev/releases)。仅下载 ZIP 不会安装到 WorkBuddy。
+- 当前版本 **1.3.2**（以 [SKILL.md](SKILL.md) frontmatter 为准）
+- 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
+- 逐版变更见 [Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 
-用户给需求，由协调者组织 OpenCode＋Oh My OpenAgent（OMO），持续完成产品梳理、技术选型、UI＋UE、架构、工程、分包开发、测试、部署上线和维护交接。
+---
 
-本仓库是唯一维护源。先修改和审查源码，再校验，提交/推送按实际授权执行；ZIP 是从源码生成的派生产物，不直接修改 ZIP，也不在多个副本中分别维护。
+## 快速上手
 
-## 使用
+**唤起语**（复制给宿主对话框）：
 
-本项目采用通用 Agent Skills 目录结构。将完整技能资源放入宿主支持的 skills 目录，或导入打包得到的 ZIP。宿主需要能读取资源、执行命令、访问授权项目并跟踪长任务。具体见 [安装与兼容说明](references/portability.md)。
+```text
+使用 wish-dev（许愿式开发）：我想做一个……，目标用户是……，
+核心流程是……，项目位置是……，希望交付到……
+先自主调查，按约束推进到交工，只有关键业务或缺失授权需要我决定时再问。
+```
 
-唤起示例：
+**宿主要求**：能读文件、执行命令、访问授权项目、跟踪长任务。
+**平台前提**：Windows agent 软件 + 模型支持工具调用（不满足则降级为整理需求/计划）。
 
-> 使用 wish-dev（许愿式开发）：我想做一个……，目标用户是……，
-> 核心流程是……，项目位置是……，希望交付到……。
-> 先自主调查，按约束推进到交工，只有关键业务或缺失授权需要我决定时再问。
+**安装**：
 
-环境缺失时自动补齐工具链（OpenCode CLI、OMO 插件、Node、MCP）与模型非敏感配置，仅敏感密钥交用户设置；不会改模型、购买服务、扩大权限或获得发布账号。技术调查与常规方案自主决定，开发执行期的外部动作以实际授权为准。
+| 方式 | 说明 |
+|---|---|
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`，按宿主规则导入 |
+| 目录复制 | 把完整 `wish-dev/` 目录复制到宿主 skills 目录（不能只拷 SKILL.md） |
+| 校验 | `sha256sum wish-dev-<ver>.zip` 比对 Release 页 `.sha256` 记录 |
 
-## 工作方式
+仅下载 ZIP 不会自动安装，需宿主支持通用 Agent Skills 目录结构或 ZIP 导入。详见 [安装与兼容说明](references/portability.md)。
 
-- 全流程：需求 → 调查 → 产品与验收 → 技术选型/成本 → UI＋UE → 架构/数据 → 工程/计划 → 并行实现 → 集成审查/测试 → 部署 → 上线验证 → 交工。
-- 按项目规模、任务粒度、依赖、耦合和风险动态分包调度，**不设置固定包数或并行个数**。适合并行的任务充分并行，强耦合任务串行；遵守实际工具、平台与资源限制。
-- 共享文件和契约有唯一写入负责人；设计、测试、部署也可作为工作包。
-- 优先修根因、保持清楚结构，不堆补偿分支、重复逻辑或新旧竞争方案。审查发现本轮必须整改问题时，修复并复审后才能集成、交工。
-- 以真实交付目标验收；要求上线时不以本地演示或构建成功交工。
-- 持久检查点支持中断恢复。宿主关闭后，skill 本身无法自动唤醒；长期监控/值守需要另有约定。
-- 每轮返回直接查询、评审、修复或执行就绪包，不等用户说“继续”；单包阻塞继续其他独立工作。只有整体目标通过、全部剩余工作缺必要外部条件、用户停止或宿主硬限制时才结束。
-- 产品实现前查同类 GitHub 源码，先评估并发和负载均衡；统一 prd.json 门禁提供下一动作候选，字段通过仍须真实独立验收。
-- 开发通道仅用 OpenCode MCP；MCP 不可达时定位根因有界修复至可达，修不通不开工，不设 CLI 兜底。未知写入未排除前不跨通道重派。通用规则与 [本机档案](references/local-windows.md) 分开维护。
+---
 
-## 源码结构
+## 12 阶段全流程
 
-~~~text
-SKILL.md                       主入口与版本
-references/                    生命周期、任务模板、代码质量、发布及接入说明
-scripts/opencode_bridge.py     离线自检/诊断用 OpenCode 单轮桥接（Python 标准库，非开发通道）
-scripts/self_test.py           桥接脚本离线自检
-scripts/check-plan.mjs         机器计划门禁与下一动作候选
-tools/test_plan.mjs            门禁/调度提示的维护测试（不打包）
-tools/package_skill.py         维护者校验与打包入口（Python 标准库）
-AGENTS.md                      仓库维护约定
-~~~
+| # | 阶段 | 产出 |
+|---|---|---|
+| 1 | 需求获取与澄清 | 目标、核心场景、范围、硬约束、交付层级 |
+| 2 | 现状调查与可行性评估 | 代码/环境/数据/接口事实、可行路径 |
+| 3 | 产品方案与验收定义 | PRD、角色权限、编号验收条件 |
+| 4 | 技术选型与成本评估 | 适配技术栈、版本依据、维护与成本 |
+| 5 | UE/交互与 UI 设计 | 信息架构、关键路径、必要原型 |
+| 6 | 系统架构与数据设计 | 模块边界、接口契约、数据模型 |
+| 7 | 工程搭建与交付计划 | 可运行骨架、检查命令、工作包依赖 |
+| 8 | 分包并行开发 | 按契约实现、必要测试、阶段演示 |
+| 9 | 集成、评审与质量验证 | 真实链路联调、代码评审、缺陷闭环 |
+| 10 | 部署准备与发布 | 可复现构建、配置/迁移/备份/回退 |
+| 11 | 上线验收与运行观察 | 目标环境核心路径、有界首轮观察 |
+| 12 | 交工与维护交接 | 交付物、验收证据、维护说明 |
 
-打包只包含 SKILL.md、references/ 和 scripts/ 等实际技能资源，不包含 Git 元数据、维护工具、日志或本机诊断文件。
+```mermaid
+flowchart LR
+  1[需求] --> 2[调查]
+  2 --> 3[产品+验收]
+  3 --> 4[选型/成本]
+  4 --> 5[UI/UE]
+  5 --> 6[架构/数据]
+  6 --> 7[工程/计划]
+  7 --> 8[分包并行]
+  8 --> 9[集成/评审]
+  9 --> 10[部署/发布]
+  10 --> 11[上线观察]
+  11 --> 12[交工]
+  8 -. 修复回流 .-> 8
+  10 -. 发布后观察 .-> 11
+  9 -. 缺陷闭环 .-> 8
+```
+
+**裁剪规则**：阶段 1、12 恒做；2–11 按交付物类型裁剪。详见 [阶段裁剪判定](references/lifecycle.md#阶段裁剪判定)。
+
+---
+
+## 核心设计原则
+
+| 原则 | 说明 |
+|---|---|
+| **动态分包** | 按项目规模、任务粒度、耦合度、风险动态调度；**不固定包数与并行度** |
+| **修根因** | 先定位错误结构，不在错误结构上堆补丁/补偿分支/新旧竞争方案 |
+| **MCP-only 通道** | OpenCode MCP 是唯一开发通道；不可达时定位根因有界修复，修不通记 `blocker` 不开工，不设 CLI 兜底 |
+| **敏感凭据隔离** | 工具链/模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
+| **数据目录统一** | 可选第 7 层：把 OpenCode data/cache/config/state 归到单一 root（E→D→C 降级），幂等迁移，写 4 个 XDG 环境变量 |
+| **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
+| **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
+
+---
+
+## 仓库结构
+
+```text
+wish-dev/
+├── SKILL.md                 主入口 + 版本 + 完整流程
+├── references/              生命周期与任务模板（12 个文件）
+│   ├── lifecycle.md        阶段结果与裁剪
+│   ├── workflow.md          任务模板与追踪矩阵
+│   ├── setup-bootstrap.md   环境检测与自动补齐（含第 7 层数据目录统一）
+│   ├── plan-contract.md     prd.json 门禁与状态计数
+│   ├── continuation.md      检查点与恢复
+│   ├── opencode-mcp.md      OpenCode MCP 调用
+│   ├── opencode-bridge.md   离线自检/诊断（非开发通道）
+│   ├── research-and-architecture.md
+│   ├── code-quality.md
+│   ├── release-handover.md
+│   ├── portability.md       安装与宿主能力分层
+│   └── local-windows.md     本机档案（非通用要求）
+├── scripts/                 运行时脚本
+│   ├── check-plan.mjs       机器计划门禁（Node 18+）
+│   ├── opencode_bridge.py   离线自检/诊断（Python 标准库）
+│   ├── self_test.py         bridge 脚本 12 项自检
+│   └── setup-opencode-paths.ps1  数据目录统一（可选第 7 层）
+└── AGENTS.md                仓库维护约定
+```
+
+打包**只包含** `SKILL.md`、`references/`、`scripts/`；不含 Git 元数据、维护工具、日志或本机诊断文件。
+
+---
 
 ## 校验与打包
 
-Python 3.10+，打包工具无需第三方库：
-
-~~~text
+```bash
+# 校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
+
+# 离线自检
 python -B scripts/self_test.py
 node --test tools/test_plan.mjs
-python -B tools/package_skill.py
-~~~
 
-默认生成 dist/wish-dev.zip，dist/ 不提交。可以用 --output 指定其他输出路径。Windows 运行临时文件默认在 E:/Claude Agent/wish-dev/runtime；也可用 WISH_DEV_RUNTIME_ROOT 或桥接参数指定允许写入的位置。计划门禁需要 Node 18+。仓库提交/推送及安装更新均按用户授权，打包不等于已安装。
+# 生成发布包（不入 git，仅本地派生物）
+python -B tools/package_skill.py --output packages/wish-dev-<ver>.zip
+```
 
-结构校验、离线模拟或 CLI 诊断通过，不代表真实 OMO 并行开发、部署和跨宿主运行已经验收。
+生成后**必须挂 GitHub Release**（`gh release create v<ver>` 带 `--target main` 挂三件套 zip/manifest/sha256）；git 树不保存任何 `packages/` 内容。
+
+结构校验、离线模拟或 CLI 诊断通过，**不代表**真实 OMO 并行开发、部署和跨宿主运行已经验收。
+
+---
 
 ## 后续维护
 
-1. 在本仓库获取最新提交，修改 SKILL.md 或相应源码；按需升级 SKILL.md 的版本。
-2. 文档变更运行结构校验；执行脚本变更还需运行离线自检并验证受影响行为。
-3. 检查完整差异，处理本轮结构问题，确认未包含密钥、日志、缓存或临时文件。
-4. 用户授权后提交并推送到仓库；多人协作或较大改动按已有规则使用分支和 PR 审查。没有 Git 元数据的源码包以文件清单及摘要标识，不能声称已提交。
-5. 需要安装包时从已核对的源码重新打包。除非明确要求，不自动上传 release 或改变仓库可见性。
+1. 拉最新代码，修改 `SKILL.md` 或 `references/` 相应文件；按需 bump `SKILL.md` 的 `version`。
+2. 文档变更跑结构校验；脚本变更还需跑离线自检并验证受影响行为。
+3. 审查完整差异，确认不含密钥、日志、缓存或临时文件。
+4. 用户授权后提交并推送；大改动或多人协作走 PR 审查。
+5. 需要安装包时从已核对源码重新打包；发版挂 GitHub Release。
 
-当前未附加开源许可证；使用和分发授权以仓库所有者的实际约定为准。
+---
+
+## License
+
+未附加开源许可证；使用和分发授权以仓库所有者约定为准。
