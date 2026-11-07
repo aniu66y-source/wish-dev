@@ -1,6 +1,6 @@
 # wish-dev · 许愿式开发
 
-当前源码版本 **1.2.1**（修订/优化版：仓库 git 化、新增运行环境就绪检测 `setup-bootstrap`、模型配置示例对齐官方 schema 并修正命令名、本机核实记录）。版本说明以 SKILL.md frontmatter 为准。
+当前源码版本 **1.3.0**（行为变更：环境缺失时自动补齐工具链 OpenCode CLI/OMO/Node/MCP 与模型非敏感配置，仅敏感密钥交用户；固化 Windows agent + 工具调用前提；安装失败不硬闯记 blocker）。此前 1.2.1 为修订/优化版：仓库 git 化、新增运行环境就绪检测 `setup-bootstrap`、模型配置示例对齐官方 schema 并修正命令名。版本说明以 SKILL.md frontmatter 为准。
 
 最新发布包为 **1.2.0** 快照：[wish-dev-1.2.0.zip](packages/wish-dev-1.2.0.zip) · [文件清单](packages/wish-dev-1.2.0.manifest.json) · [SHA-256](packages/wish-dev-1.2.0.sha256)。packages/ 保存明确发布的版本包（1.2.0 起 zip 不入 Git，仅 manifest/sha256 作发布凭据）；1.2.1 的发布包在需要发布时从当前源码重新打包生成，dist/ 仍是忽略的本地打包目录；仅生成 ZIP 不会安装到 WorkBuddy。
 
@@ -18,7 +18,7 @@
 > 核心流程是……，项目位置是……，希望交付到……。
 > 先自主调查，按约束推进到交工，只有关键业务或缺失授权需要我决定时再问。
 
-技能不会自动安装 OpenCode/OMO、改模型、购买服务、扩大权限或获得发布账号。技术调查与常规方案自主决定，外部动作以实际授权为准。
+环境缺失时自动补齐工具链（OpenCode CLI、OMO 插件、Node、MCP）与模型非敏感配置，仅敏感密钥交用户设置；不会改模型、购买服务、扩大权限或获得发布账号。技术调查与常规方案自主决定，开发执行期的外部动作以实际授权为准。
 
 ## 工作方式
 

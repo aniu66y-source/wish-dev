@@ -2,7 +2,7 @@
 name: wish-dev
 description: 用于用户提出软件开发愿望、要求许愿式开发或续做已有交付任务时。适用于新软件落地及现有项目功能交付；仅安装或配置技能时不启动产品开发，普通问答及单纯审查不进入完整开发循环。
 metadata:
-  version: "1.2.1"
+  version: "1.3.0"
   language: "zh-CN"
   runtime: "OpenCode with OMO plugin; MCP or optional Python 3.10+ bridge; Node 18+ for plan gate"
 ---
@@ -15,7 +15,7 @@ metadata:
 
 ## 启动与需求
 
-1. 先区分“安装/配置技能”和“提交开发任务”。仅设置技能时完成设置并等待需求，不扫描其他项目或启动开发。提交开发任务时，先按 [references/setup-bootstrap.md](references/setup-bootstrap.md) 只读检测 OpenCode＋OMO 运行环境是否就绪；缺失项在取得授权后补齐，全部检测通过才进入下方开发流程。不自动安装、不迁移配置、不写密钥。
+1. 先区分“安装/配置技能”和“提交开发任务”。仅设置技能时完成设置并等待需求，不扫描其他项目或启动开发。提交开发任务时，先按 [references/setup-bootstrap.md](references/setup-bootstrap.md) 检测并自动补齐运行环境：工具链（OpenCode CLI、OMO 插件、Node、MCP）与模型非敏感配置缺失时直接安装/写入、不停；仅敏感凭据（真实 API key 值）交用户在环境变量设置。补齐通过才进入下方开发流程。不迁移既有配置、不覆盖用户数据、不写明文密钥。本技能使用前提为 Windows 上的 agent 软件且当前模型支持工具调用，不满足任一则降级为整理需求/计划，不声称完整开发。
 2. 开发前读取对话、附件、原型、项目规则与现有改动，确认真实项目位置及文件归属。正式源码和文档放约定位置；运行缓存、临时文件和工作副本使用用户指定目录。本机为 E:\Claude Agent；桥接目录可用 WISH_DEV_RUNTIME_ROOT 或参数指定，其他系统见移植说明。既有应用缓存的迁移单独按授权处理。
 3. 明确交付目标：源码、本地可运行程序、测试环境或生产上线。用户要求部署上线，就将目标环境的发布及上线验证纳入必须验收项，不能自行改成本地演示交工。
 4. 从现有资料补齐目标用户、核心场景、角色权限、必须功能、不做范围、数据与集成、平台版本、部署条件及可观察验收标准。区分事实、假设和待确认事项，保留用户硬约束。
@@ -32,9 +32,9 @@ metadata:
 
 先确认现状，再说明具体实施范围及风险；缺少授权时提供可审阅方案后获取确认。已有项目开发或目标环境发布的批量授权就继续，不重复询问。用户提出完整开发目标不自动授予未明确的账号、购买、外发、生产数据删除或全局配置权限。
 
-遵守项目和宿主限制。不得通过 --auto、跳过权限、关闭沙箱或启动外部 CLI 扩大权限。安装/升级工具、改模型和密钥、覆盖配置或新增外部动作应核对相应授权；子代理无权扩大范围。向后端传递原始用户约束与实际授权，模板默认值不能冒充授权。
+遵守项目和宿主限制。不得通过 --auto、跳过权限、关闭沙箱或启动外部 CLI 扩大权限。环境就绪期的工具链自动补齐（仅 OpenCode CLI、OMO 插件、Node、MCP 的缺失项，不覆盖既有）见 [references/setup-bootstrap.md](references/setup-bootstrap.md)；开发执行期改模型、改密钥、覆盖既有配置，或新增外部动作（账号、购买、发布、生产数据删除、全局配置）仍须核对相应授权；子代理无权扩大范围。向后端传递原始用户约束与实际授权，模板默认值不能冒充授权。
 
-已经在启用 OMO 的 OpenCode 中时直接使用当前工具，**不再启动另一层 OpenCode，也不递归调用本技能**。其他宿主优先使用已连接且可用的 OpenCode MCP，按 [references/opencode-mcp.md](references/opencode-mcp.md) 调用；没有适用 MCP 时按 [references/opencode-bridge.md](references/opencode-bridge.md) 使用可选 CLI 桥接。同一项目只设一个 OMO 协调会话，不为每包另开一套。原任务状态未知时不得换通道重新提交。缺 CLI、插件、认证或运行能力时说明具体缺项，不擅自重装、迁移或改用另一后端。
+已经在启用 OMO 的 OpenCode 中时直接使用当前工具，**不再启动另一层 OpenCode，也不递归调用本技能**。其他宿主优先使用已连接且可用的 OpenCode MCP，按 [references/opencode-mcp.md](references/opencode-mcp.md) 调用；没有适用 MCP 时按 [references/opencode-bridge.md](references/opencode-bridge.md) 使用可选 CLI 桥接。同一项目只设一个 OMO 协调会话，不为每包另开一套。原任务状态未知时不得换通道重新提交。缺 CLI、插件或运行能力时按 [references/setup-bootstrap.md](references/setup-bootstrap.md) 自动补齐（首次安装/配置，不覆盖既有）并说明缺项；缺认证（真实密钥）交用户在环境变量设置；不擅自跨通道改用另一后端。
 
 ## 完整交付流程
 

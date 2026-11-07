@@ -11,7 +11,7 @@
 
 OpenCode 支持项目内 .opencode/skills/wish-dev/、.agents/skills/wish-dev/ 以及全局 ~/.config/opencode/skills/wish-dev/ 等路径，见[官方技能文档](https://opencode.ai/docs/skills/)。其他软件查当前官方目录约定。
 
-**安装宿主技能与安装 OpenCode/OMO 是两件事。** 本包无安装器，不迁移配置、不选模型、不写密钥。先只读核对环境，再按授权补齐依赖。
+**安装宿主技能（把 skill 放入宿主 skills 目录）与补齐 OpenCode/OMO 运行环境是两件事。** 宿主安装 skill 由用户或宿主完成；运行环境缺失（OpenCode CLI、OMO 插件、Node、MCP）按 [setup-bootstrap.md](setup-bootstrap.md) 自动补齐，不覆盖用户既有配置。本技能不迁移既有配置、不写明文密钥；仅模型配置的非敏感字段直接写入。
 
 ## 能力要求
 
@@ -23,7 +23,7 @@ OpenCode 支持项目内 .opencode/skills/wish-dev/、.agents/skills/wish-dev/ �
 | 只能读提示词，不能执行命令/访问项目 | 整理需求和计划，不能声称实际开发 |
 | 云端不能访问本机 CLI/路径 | 需要用户授权的远程执行通道 |
 
-已有适用 OpenCode MCP 时优先按 [opencode-mcp.md](opencode-mcp.md) 使用，不要求 Python 桥接。可选桥接脚本使用 Python 3.10+ 标准库、OpenCode CLI 和已可用的 OMO 插件。机器计划门禁需要 Node 18+，缺少时记录未执行，不擅自安装或手填通过。沿用现有模型、认证和额度，不默认使用特定“免费”服务，不承诺无限 token 或无期限后台运行。
+已有适用 OpenCode MCP 时优先按 [opencode-mcp.md](opencode-mcp.md) 使用，不要求 Python 桥接。可选桥接脚本使用 Python 3.10+ 标准库、OpenCode CLI 和已可用的 OMO 插件。机器计划门禁需要 Node 18+，缺少时按 [setup-bootstrap.md](setup-bootstrap.md) 自动安装并复测，不手填 ok 当通过。沿用现有模型、认证和额度，不默认使用特定“免费”服务，不承诺无限 token 或无期限后台运行。
 
 完整交付还需要目标宿主能访问相应设计/渲染、构建/测试及实际部署环境；根据项目形式使用已有工具，不假定安装技能就获得服务器、账号或发布权限。Windows 没有该目录时，在执行前通过 --runtime-root / WISH_DEV_RUNTIME_ROOT 指定存在且允许写入的位置。
 

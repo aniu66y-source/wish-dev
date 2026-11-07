@@ -2,7 +2,7 @@
 
 `prd.json` 是唯一机器计划，沿用 wishes/<wish-id>/ 或项目既有账本位置。原始愿望、设计和人可读判据可按规模合并，但须与计划一致。机器门禁检查字段、固定源码引用、判据覆盖、状态与重试预算；不会执行 `verify` 命令、访问 GitHub、证明架构质量或读取证据内容。结构通过后仍须真实执行和独立验收。
 
-Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实现前、回退状态后、每次标 done 后和最终交付前运行；非零先纠正计划。缺 Node 先找已有可用运行时，不擅自安装，不把手填 ok 当门禁通过；继续其他独立调查/规划。纯只读包在 allowed_files 声明可读范围及禁止写入，字段不授予写权。
+Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实现前、回退状态后、每次标 done 后和最终交付前运行；非零先纠正计划。缺 Node 按 [setup-bootstrap.md](setup-bootstrap.md) 自动安装 Node ≥ 18 并复测，不把手填 ok 当门禁通过；补齐前可继续其他独立调查/规划。纯只读包在 allowed_files 声明可读范围及禁止写入，字段不授予写权。
 
 调研/需求/设计尚未完成时可维护同一份明确标记的计划草稿，非零是预期结果；允许继续不依赖缺项的只读调查与规划，不能据此启动产品实现或伪填 research.complete。门禁不通过只阻止产品实现、完成标记及依赖推进，不阻止修正计划本身。
 
