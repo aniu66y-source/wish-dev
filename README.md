@@ -2,7 +2,7 @@
 
 当前源码版本 **1.3.2**（数据目录统一：新增可选第 7 层，`setup-opencode-paths.ps1` 把 OpenCode 的 data/cache/config/state 归到单一 root，E→D→C 降级、幂等迁移、写入 4 个 XDG 环境变量；非硬门控，不影响开工）。1.3.1 通道收敛：开发通道**仅用 OpenCode MCP**，去掉 CLI 桥接兜底；门控不通先定位根因有界修复，修不通记 blocker 不开工；`opencode_bridge.py` 降级为离线自检/诊断脚本。1.3.0 行为变更：环境缺失时自动补齐工具链（OpenCode CLI/OMO/Node/MCP）与模型非敏感配置，仅敏感密钥交用户；固化 Windows agent + 工具调用前提；安装失败不硬闯记 blocker。版本说明以 SKILL.md frontmatter 为准。
 
-最新发布包为 **1.3.1**：[wish-dev-1.3.1.zip](packages/wish-dev-1.3.1.zip) · [文件清单](packages/wish-dev-1.3.1.manifest.json) · [SHA-256](packages/wish-dev-1.3.1.sha256)。packages/ 保存明确发布的版本包（zip 为本地派生物不入 Git，manifest/sha256 作发布凭据）；更早的 1.2.0 快照仍在 packages/。仅生成 ZIP 不会安装到 WorkBuddy。
+最新发布包为 **1.3.2**，产物（zip / manifest / SHA-256）统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)：[wish-dev-1.3.2.zip](https://github.com/aniu66y-source/wish-dev/releases/download/v1.3.2/wish-dev-1.3.2.zip) · [文件清单](https://github.com/aniu66y-source/wish-dev/releases/download/v1.3.2/wish-dev-1.3.2.manifest.json) · [SHA-256](https://github.com/aniu66y-source/wish-dev/releases/download/v1.3.2/wish-dev-1.3.2.sha256)。本仓 git 树**不保存任何打包产物**（`packages/` 整目录不入 Git）；需要某版本去 Releases 下载，校验用对应 manifest/sha256。更早版本（1.3.1 / 1.2.0）见 [Releases](https://github.com/aniu66y-source/wish-dev/releases)。仅下载 ZIP 不会安装到 WorkBuddy。
 
 用户给需求，由协调者组织 OpenCode＋Oh My OpenAgent（OMO），持续完成产品梳理、技术选型、UI＋UE、架构、工程、分包开发、测试、部署上线和维护交接。
 

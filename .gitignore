@@ -1,8 +1,8 @@
 # Generated packages and runtime evidence
-# packages/*.zip 是派生物，tools/package_skill.py 可随时再生；
-# 仅保留 manifest.json / sha256 作为发布凭据入版本库。
+# packages/ 整目录不入 Git：zip/manifest/sha256 都是派生物，
+# 发布产物一律走 GitHub Releases（tools/package_skill.py 可随时再生）。
 dist/
-packages/*.zip
+packages/
 _runtime/
 *.log
 __pycache__/
