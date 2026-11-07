@@ -22,7 +22,7 @@
 | 3. 模型配置 | 读配置 `model` 字段与 provider 块（当前官方 schema：`providers` 复数 + `settings`；旧版兼容写法：`provider` 单数 + `npm` + `options`，以 `opencode debug config` 输出为准）；凭据须为 `{env:VAR}` 占位 | 有默认 `model`（`providerID/modelID`）且对应 provider 可解析、凭据走环境变量且该变量已设 |
 | 4. OMO 运行时可调用 | 宿主工具索引中确认 OMO 协调/子代理工具条目存在 | 工具 schema 可查 |
 | 5. Node ≥ 18 | `node --version` | 版本号 ≥ 18（check-plan.mjs 门禁依赖） |
-| 6. 服务通道（MCP 或 CLI 桥接，至少一个可达） | 优先 MCP：宿主工具索引含 OpenCode MCP；无适用 MCP 则 CLI 路径：`python scripts/opencode_bridge.py --check` 通过 | 通道可达（MCP 或 CLI 二选一即可，二者皆通则优先 MCP；**非可跳过项**） |
+| 6. 服务通道（仅 OpenCode MCP） | 宿主工具索引含 OpenCode MCP 且可达 | 通道可达（MCP-only，**非可跳过项**；无 CLI 桥接兜底） |
 
 任一层级不满足时，记录具体缺失项和影响范围，并按「缺失补齐」表自动补齐；补齐后复测该层，仍失败才记入风险/阻塞。
 
@@ -30,9 +30,10 @@
 
 本技能靠 OpenCode CLI + OMO + Node + 服务通道**分包并行**提高交付效率，这四项是**开工的硬前提，不可当作可选项降级或跳过**：
 
-- 第 1、2、4、5 层（OpenCode CLI、OMO 插件、OMO 运行时可调用、Node ≥ 18）与第 6 层（通道，MCP 或 CLI 二选一）**必须全部实检 PASS 才允许进入开发流程**。
-- PASS 以**实际复测输出**为准（版本号、工具 schema、`--check` 结果），不以安装命令退出码、手填 ok、或"装过就算好"判定。
-- 任一项未通过 → 环境未就绪 → **不得开工**：记 `blocker` + 恢复条件，交用户处理（提权/放行网络/设凭据），可先做不依赖该环境的独立调查/设计，但不得启动分包开发。
+- 第 1、2、4、5 层（OpenCode CLI、OMO 插件、OMO 运行时可调用、Node ≥ 18）与第 6 层（**仅** OpenCode MCP 通道）**必须全部实检 PASS 才允许进入开发流程**。
+- PASS 以**实际复测输出**为准（版本号、工具 schema、MCP 工具可用），不以安装命令退出码、手填 ok、或"装过就算好"判定。
+- 任一项未通过 → 先**定位根因并执行有界修复**（重启服务、重连 MCP、重装插件、设凭据等），复测直至通过；**修不通则记 `blocker` + 恢复条件，不开工**。可先做不依赖该环境的独立调查/设计，但不得启动分包开发。
+- 不设 CLI 桥接兜底通道；MCP 不可达即视为通道未就绪。
 - 只有"仅整理需求/计划"（平台前提不满足）才可不强求本门控；一旦要真做开发，四项必须全通。
 
 ## 模型配置引导（第 3 层缺失时）
@@ -96,9 +97,9 @@ model: "<provider-id>/<model-id>"   # 默认模型，选择器语法 provider/mo
 | OMO 插件未配置 | 直接写入 plugins 指向 OMO 的条目，重启服务后复测工具可用性 | 不停，自动 |
 | 模型未配置/无法解析 | 直接写入 `model` + provider 块（非敏感字段），重启生效；密钥留 `{env:VAR}` | 不停，自动 |
 | 上述任一 provider 的 API key 未设（环境变量缺失） | 停下，告知需设置哪个变量（如 `MYPROV_API_KEY`），由用户配置；记入 `risks`，不阻断其他工作 | **停（仅敏感凭据）** |
-| OMO 未加载/工具不可用 | 按 [opencode-mcp.md](opencode-mcp.md) 有界恢复；无适用 MCP 时按 [opencode-bridge.md](opencode-bridge.md) CLI 桥接 | 不停，自动 |
+| OMO 未加载/工具不可用 | 按 [opencode-mcp.md](opencode-mcp.md) 定位根因、有界修复（重载 OMO、重启插件、重连 MCP）至工具可用 | 不停，自动；修不通则 blocker |
 | Node < 18 或缺失 | 直接安装 Node ≥ 18（门禁依赖），装后复测 | 不停，自动 |
-| MCP 通道不可用 | 按 opencode-mcp.md 有界恢复一次；仍不可用退回 CLI 桥接 | 不停，自动 |
+| MCP 通道不可用 | 按 [opencode-mcp.md](opencode-mcp.md) 定位根因、有界修复（重连、重启 4096 服务、核对实例归属）至可达；**不设 CLI 兜底** | 不停，自动；修不通则 blocker，不开工 |
 
 补齐后必须**重新执行完整检测顺序并逐层实检通过**（以实际输出/复测为准，非安装退出码、非手填）才允许进入开发流程；任何一层未通过即视为环境未就绪，不得开工。敏感凭据（真实 API key 值）未设时该层为 `blocker`，**不得开工**，记恢复条件并交用户处理。
 

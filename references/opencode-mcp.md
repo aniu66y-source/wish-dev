@@ -1,6 +1,6 @@
 # 通过 OpenCode MCP 调度
 
-适用于当前宿主已有可用 OpenCode MCP 的情形。若已身处启用 OMO 的 OpenCode，直接用当前工具，不再套 MCP 或 CLI。没有适用 MCP 时按 [opencode-bridge.md](opencode-bridge.md) 使用 CLI；切换前必须核对原任务已停止且副作用已确认。
+适用于当前宿主已有可用 OpenCode MCP 的情形。若已身处启用 OMO 的 OpenCode，直接用当前工具，不再套一层 MCP。OpenCode MCP 是唯一的开发通道；通道不可达时按 [setup-bootstrap.md](setup-bootstrap.md) 定位根因、有界修复至可达，修不通记 blocker 不开工，不设 CLI 兜底。重连/切换前必须核对原任务已停止且副作用已确认。
 
 ## 发现能力与健康分层
 

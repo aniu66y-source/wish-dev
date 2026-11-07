@@ -2,9 +2,9 @@
 name: wish-dev
 description: 用于用户提出软件开发愿望、要求许愿式开发或续做已有交付任务时。适用于新软件落地及现有项目功能交付；仅安装或配置技能时不启动产品开发，普通问答及单纯审查不进入完整开发循环。
 metadata:
-  version: "1.3.0"
+  version: "1.3.1"
   language: "zh-CN"
-  runtime: "OpenCode with OMO plugin; MCP or optional Python 3.10+ bridge; Node 18+ for plan gate"
+  runtime: "OpenCode with OMO plugin; OpenCode MCP; Node 18+ for plan gate"
 ---
 
 # 许愿式开发
@@ -34,7 +34,7 @@ metadata:
 
 遵守项目和宿主限制。不得通过 --auto、跳过权限、关闭沙箱或启动外部 CLI 扩大权限。环境就绪期的工具链自动补齐（仅 OpenCode CLI、OMO 插件、Node、MCP 的缺失项，不覆盖既有）见 [references/setup-bootstrap.md](references/setup-bootstrap.md)；开发执行期改模型、改密钥、覆盖既有配置，或新增外部动作（账号、购买、发布、生产数据删除、全局配置）仍须核对相应授权；子代理无权扩大范围。向后端传递原始用户约束与实际授权，模板默认值不能冒充授权。
 
-已经在启用 OMO 的 OpenCode 中时直接使用当前工具，**不再启动另一层 OpenCode，也不递归调用本技能**。其他宿主优先使用已连接且可用的 OpenCode MCP，按 [references/opencode-mcp.md](references/opencode-mcp.md) 调用；没有适用 MCP 时按 [references/opencode-bridge.md](references/opencode-bridge.md) 使用可选 CLI 桥接。同一项目只设一个 OMO 协调会话，不为每包另开一套。原任务状态未知时不得换通道重新提交。缺 CLI、插件或运行能力时按 [references/setup-bootstrap.md](references/setup-bootstrap.md) 自动补齐（首次安装/配置，不覆盖既有）并说明缺项；缺认证（真实密钥）交用户在环境变量设置；不擅自跨通道改用另一后端。
+已经在启用 OMO 的 OpenCode 中时直接使用当前工具，**不再启动另一层 OpenCode，也不递归调用本技能**。其他宿主使用已连接且可用的 OpenCode MCP，按 [references/opencode-mcp.md](references/opencode-mcp.md) 调用；MCP 通道不可达时按 [references/setup-bootstrap.md](references/setup-bootstrap.md) 定位根因、有界修复至可达，修不通记 `blocker` 不开工，不设 CLI 兜底通道。同一项目只设一个 OMO 协调会话，不为每包另开一套。原任务状态未知时不得换通道重新提交。缺 CLI、插件或运行能力时按 [references/setup-bootstrap.md](references/setup-bootstrap.md) 自动补齐（首次安装/配置，不覆盖既有）并说明缺项；缺认证（真实密钥）交用户在环境变量设置；不擅自跨通道改用另一后端。
 
 ## 完整交付流程
 

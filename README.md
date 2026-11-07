@@ -1,6 +1,6 @@
 # wish-dev · 许愿式开发
 
-当前源码版本 **1.3.0**（行为变更：环境缺失时自动补齐工具链 OpenCode CLI/OMO/Node/MCP 与模型非敏感配置，仅敏感密钥交用户；固化 Windows agent + 工具调用前提；安装失败不硬闯记 blocker）。此前 1.2.1 为修订/优化版：仓库 git 化、新增运行环境就绪检测 `setup-bootstrap`、模型配置示例对齐官方 schema 并修正命令名。版本说明以 SKILL.md frontmatter 为准。
+当前源码版本 **1.3.1**（通道收敛：开发通道**仅用 OpenCode MCP**，去掉 CLI 桥接兜底；门控不通先定位根因有界修复，修不通记 blocker 不开工；`opencode_bridge.py` 降级为离线自检/诊断脚本，非开发通道）。1.3.0 行为变更：环境缺失时自动补齐工具链（OpenCode CLI/OMO/Node/MCP）与模型非敏感配置，仅敏感密钥交用户；固化 Windows agent + 工具调用前提；安装失败不硬闯记 blocker。版本说明以 SKILL.md frontmatter 为准。
 
 最新发布包为 **1.2.0** 快照：[wish-dev-1.2.0.zip](packages/wish-dev-1.2.0.zip) · [文件清单](packages/wish-dev-1.2.0.manifest.json) · [SHA-256](packages/wish-dev-1.2.0.sha256)。packages/ 保存明确发布的版本包（1.2.0 起 zip 不入 Git，仅 manifest/sha256 作发布凭据）；1.2.1 的发布包在需要发布时从当前源码重新打包生成，dist/ 仍是忽略的本地打包目录；仅生成 ZIP 不会安装到 WorkBuddy。
 
@@ -30,14 +30,14 @@
 - 持久检查点支持中断恢复。宿主关闭后，skill 本身无法自动唤醒；长期监控/值守需要另有约定。
 - 每轮返回直接查询、评审、修复或执行就绪包，不等用户说“继续”；单包阻塞继续其他独立工作。只有整体目标通过、全部剩余工作缺必要外部条件、用户停止或宿主硬限制时才结束。
 - 产品实现前查同类 GitHub 源码，先评估并发和负载均衡；统一 prd.json 门禁提供下一动作候选，字段通过仍须真实独立验收。
-- 本机优先复用 MCP，无适用 MCP 时才用可选 CLI；未知写入未排除前不跨通道重派。通用规则与 [本机档案](references/local-windows.md) 分开维护。
+- 开发通道仅用 OpenCode MCP；MCP 不可达时定位根因有界修复至可达，修不通不开工，不设 CLI 兜底。未知写入未排除前不跨通道重派。通用规则与 [本机档案](references/local-windows.md) 分开维护。
 
 ## 源码结构
 
 ~~~text
 SKILL.md                       主入口与版本
 references/                    生命周期、任务模板、代码质量、发布及接入说明
-scripts/opencode_bridge.py     可选的外部 OpenCode 单轮桥接（Python 标准库）
+scripts/opencode_bridge.py     离线自检/诊断用 OpenCode 单轮桥接（Python 标准库，非开发通道）
 scripts/self_test.py           桥接脚本离线自检
 scripts/check-plan.mjs         机器计划门禁与下一动作候选
 tools/test_plan.mjs            门禁/调度提示的维护测试（不打包）

@@ -1,11 +1,13 @@
-# OpenCode＋OMO 桥接
+# OpenCode＋OMO 桥接（仅离线自检/诊断，非开发通道）
+
+本技能开发通道**只有 OpenCode MCP**，不再有 CLI 桥接兜底。本文件保留的 `opencode_bridge.py` 单轮桥接脚本仅用于：安装后离线自检（`self_test.py`）、参数/中文传递/日志/停止行为诊断。它**不是开发通道，不得用它替代 MCP 跑分包流程**。
 
 ## 先识别执行环境
 
 - 宿主已经是启用 OMO 的 OpenCode：留在当前会话直接调度；不要再执行桥接脚本。
-- 其他宿主先检查已有 MCP，适用且可用时按 [opencode-mcp.md](opencode-mcp.md) 复用。无适用 MCP 且能运行本地命令时，脚本启动一个 OpenCode 协调会话，由它调度 OMO 工作包。原 MCP/CLI 任务 unknown 时先查原任务及副作用，不换通道重派。
+- 开发通道只有 [opencode-mcp.md](opencode-mcp.md) 的 OpenCode MCP，MCP 不可达时按 [setup-bootstrap.md](setup-bootstrap.md) 定位根因、有界修复至可达，修不通记 blocker 不开工，不用本脚本替代。原 MCP 任务 unknown 时先查原任务及副作用，不换通道重派。
 - 脚本只跑一轮、记录过程；宿主负责检查结果和持续续做。它不是独立守护进程，也不证明插件已加载或功能已通过。
-- 桥接传输的是当前任务束。完整项目范围来自主技能与 lifecycle/workflow 指引：选型、UI＋UE、架构、开发、部署和交接都必须由协调者安排，不能把一次编码轮次当成完整项目。将整体交付目标、阶段输入及实际授权一并传入；发布阶段按 release-handover 指引执行。
+- 诊断调用只用于自检/排查（参数传递、日志、会话提取、停止行为），不承载完整开发；开发任务束按 workflow.md 编写，由协调者经 MCP 通道安排，不用本脚本跑完整项目或交工。
 
 执行前读取项目规则，完成必要的范围/风险说明并取得缺失授权。任务束按 workflow.md 编写，必须包含真实授权边界、验收条件和文件归属。运行后不因 CLI 为 0 就交工。
 
@@ -24,7 +26,7 @@ python "<skill>/scripts/opencode_bridge.py" --project "<project>" --prompt-file 
 
 配置有 oh-my-openagent / 旧 oh-my-opencode、缓存有文件，都不代表本次运行已加载 OMO。首次授权执行时要求 OMO 返回当前工具证据，无法分包则明确阻塞。不要把独立 omo Native CLI 当成 OpenCode 插件的替代入口。
 
-## 实际调用
+## 诊断调用（非开发通道，仅自检/排查用）
 
 ~~~text
 python "<skill>/scripts/opencode_bridge.py" --project "<project>" --prompt-file "<task>/bundle.md" --runtime-root "E:/Claude Agent/wish-dev/runtime" --timeout 1800
@@ -67,7 +69,7 @@ result.json 只从顶层事件收集 session ID。恰好一个时填 session_id�
 python "<skill>/scripts/opencode_bridge.py" --project "<project>" --prompt-file "<task>/continuation.md" --session "实际主会话ID" --runtime-root "E:/Claude Agent/wish-dev/runtime" --timeout 1800
 ~~~
 
-续做任务束写明已完成验收、未完成包、最近失败、授权/需求变化与下一步。先检查后台任务是否仍在运行，避免重复写入。收集并审查后台结果、完成集成验证后才决定下一轮或交工；CLI 正常结束本身不表示 OMO 子任务已全部结束。
+续做任务束写明已完成验收、未完成包、最近失败、授权/需求变化与下一步（仅用于诊断时核对）。先检查后台任务是否仍在运行，避免重复写入；CLI 正常结束本身不表示 OMO 子任务已全部结束。
 
 临时网络/限流最多有限重试并遵守 retry-after；同一根因反复出现时调查/报告，不加无限重启循环。
 
