@@ -23,8 +23,37 @@
 | 4. OMO 运行时可调用 | 宿主工具索引中确认 OMO 协调/子代理工具条目存在 | 工具 schema 可查 |
 | 5. Node ≥ 18 | `node --version` | 版本号 ≥ 18（check-plan.mjs 门禁依赖） |
 | 6. 服务通道（仅 OpenCode MCP） | 宿主工具索引含 OpenCode MCP 且可达 | 通道可达（MCP-only，**非可跳过项**；无 CLI 桥接兜底） |
+| 7. 数据目录统一（可选，非硬门控） | 检查 `XDG_DATA_HOME`/`XDG_CACHE_HOME`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME` 是否已指向统一 root 下的 `<root>\.opencode\{data,cache,config,state}` | 已指向统一 root；未指向则运行 `setup-opencode-paths.ps1` 统一（**不 block 开工**，仅缓存归位） |
 
 任一层级不满足时，记录具体缺失项和影响范围，并按「缺失补齐」表自动补齐；补齐后复测该层，仍失败才记入风险/阻塞。
+
+## 数据目录统一（第 7 层，可选）
+
+把 OpenCode 的 data/cache/config/state 归到单一 root，避免散落 C 盘各处。**非硬门控**：未统一不影响开工，只是缓存/历史数据归位。已有环境也会改（幂等迁移）。
+
+**root 降级链**（首个可写即用）：`E:\Claude Agent` → `D:\Claude Agent` → `C:\Claude Agent`；可用 `WISH_DEV_RUNTIME_ROOT` 或参数指定。
+
+**机制**：OpenCode 是编译二进制、无配置文件，路径只能靠 4 个 User 级环境变量控制（已实测生效）：
+
+| 变量 | 指向 | 控什么 |
+|---|---|---|
+| `XDG_DATA_HOME` | `<root>\.opencode\data` | data/log/repos（最大，会话/克隆） |
+| `XDG_CACHE_HOME` | `<root>\.opencode\cache` | cache/bin |
+| `XDG_CONFIG_HOME` | `<root>\.opencode\config` | config（含 opencode.jsonc、OMO 插件） |
+| `XDG_STATE_HOME` | `<root>\.opencode\state` | state |
+
+**关键 gotcha**：OpenCode 会在 XDG 目录下**再套一层 `\opencode` 叶子**读写（`data\opencode\`、`config\opencode\`）。所以 XDG 变量指向父目录，迁移/合并目标叶子是 `<kind>\opencode`，冲突时旧数据覆盖服务新建的空骨架。tmp 类（`Temp\opencode`）跟系统 TEMP，XDG 管不到，**有意不统一**（避免动全局 TEMP 影响其他程序）。
+
+**执行**：
+
+~~~text
+powershell -NoProfile -File "<skill>/scripts/setup-opencode-paths.ps1" [-ServiceTask "OpenCode-CodeBuddy-Server"] [-Root "E:\Claude Agent"] [-NoMigrate] [-NoRestart]
+~~~
+
+- 默认：选 root → 建目录树 → 设 4 XDG 变量 → 迁移既有数据（robocopy `/COPY:DAT`，非管理员安全；字节校验全 MATCH 才清源）→ 停 4096 并重启服务。
+- 幂等：重跑对已统一的环境做 reconcile，不重复迁移、不丢数据。
+- 校验：跑完 `opencode debug paths`，确认 8 类路径中 data/cache/config/state 都落到 `<root>\.opencode\...\opencode`，且 C 盘旧目录不再被服务重建。
+- 脚本只改 User 级环境变量与缓存目录，不改模型、不改凭据、不覆盖已有 `opencode.jsonc` 内容。
 
 ## 开工硬门控
 
