@@ -3,7 +3,7 @@
 > 用户给需求 → OpenCode + OMO 协调者动态分包并行 → 可验收、可维护的交付物。
 > 采用通用 Agent Skills 目录结构，适用于**任意支持工具调用的 agent 软件宿主**（Windows 首选）。
 
-- 当前版本 **1.3.4**（以 [SKILL.md](SKILL.md) frontmatter 为准）
+- 当前版本 **1.3.5**（以 [SKILL.md](SKILL.md) frontmatter 为准）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 
