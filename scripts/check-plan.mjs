@@ -91,9 +91,11 @@ export function validatePlan(plan) {
     });
     if(s.status==='done'&&(!Array.isArray(s.evidence)||!s.evidence.length))errors.push(prefix+'.evidence is required for done');
     if(s.status==='done'){
-      const implementation=s.context_id??s.sessionId;
-      const reviewer=s.review?.context_id??s.review?.sessionId;
-      if(!object(s.review)||s.review.spec!=='pass'||s.review.quality!=='pass'||!text(implementation)||!text(reviewer)||reviewer===implementation)errors.push(prefix+'.review must pass specification and quality checks in a separate actual context');
+      const idsOf=(source,...keys)=>keys.map(key=>source?.[key]).filter(text);
+      const implementations=idsOf(s,'context_id','sessionId');
+      const reviewers=idsOf(s.review,'context_id','sessionId');
+      const separate=implementations.length>0&&reviewers.length>0&&reviewers.every(id=>!implementations.includes(id));
+      if(!object(s.review)||s.review.spec!=='pass'||s.review.quality!=='pass'||!separate)errors.push(prefix+'.review must pass specification and quality checks in a separate actual context');
     }
     if(s.evidence!==undefined){
       if(!Array.isArray(s.evidence))errors.push(prefix+'.evidence must be an array');

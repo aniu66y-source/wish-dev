@@ -45,6 +45,8 @@ reject('cyclic dependency',p=>{p.stories[0].depends_on=['WP-02'];p.stories.push(
 reject('dependent writer cannot start before prerequisites pass',p=>{p.stories.push({...p.stories[0],id:'WP-02',depends_on:['WP-01'],status:'running'});});
 reject('done needs actual evidence references',p=>{done(p);p.stories[0].evidence=[];});
 reject('same context is not independent review',p=>{done(p);p.stories[0].review.context_id='actual-run-01';});
+reject('review cannot reuse the implementation session under another field',p=>{done(p);p.stories[0].sessionId='ses_same';p.stories[0].review.context_id='ses_same';});
+reject('any review identifier matching the implementation is rejected',p=>{done(p);p.stories[0].review.sessionId='actual-run-01';});
 reject('missing quality review',p=>{done(p);p.stories[0].review.quality='fail';});
 reject('evidence cannot escape its root',p=>{done(p);p.stories[0].evidence=['evidence/../data'];});
 reject('absolute evidence paths are rejected',p=>{done(p);p.stories[0].evidence=['C:/secret'];});
@@ -56,7 +58,7 @@ test('all packages done requests final acceptance rather than declaring delivery
 test('only blocked work requests blocker investigation',()=>{const p=fixture();p.stories[0].status='blocked';assert.deepEqual(nextActions(p),[{action:'resolve_blockers',task_ids:['WP-01']}]);});
 
 function cli(source, check, {withLedger=true}={}){
-  const root=process.env.WISH_DEV_RUNTIME_ROOT??(process.platform==='win32'?'E:/Claude Agent/wish-dev/runtime':path.join(os.tmpdir(),'wish-dev'));
+  const root=process.env.WISH_DEV_RUNTIME_ROOT??path.join(os.tmpdir(),'wish-dev');
   fs.mkdirSync(root,{recursive:true});
   const run=fs.mkdtempSync(path.join(root,'plan-test-'));
   try{

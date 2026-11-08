@@ -29,8 +29,8 @@ def resources():
 
 
 def skill_quality(manifest):
-    """Lightweight, non-blocking quality read on SKILL.md (clarity/completeness/
-    conciseness/examples/crossPlatform). Mirrors a _scores.json style report
+    """Lightweight, non-blocking quality read on SKILL.md (completeness/examples/
+    conciseness/crossPlatform/license). Mirrors a _scores.json style report
     without the A/B impact harness: it only reports, never gates the exit code."""
     lines = manifest.count("\n") + 1
     examples = len(re.findall(r"(?m)^[~`]{3,}", manifest)) // 2
@@ -131,7 +131,7 @@ def package(files, metadata, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Validate without building")
-    parser.add_argument("--output", type=Path, default=ROOT / "dist/wish-dev.zip")
+    parser.add_argument("--output", type=Path, default=ROOT / "packages/wish-dev.zip")
     args = parser.parse_args()
     try:
         files = resources()

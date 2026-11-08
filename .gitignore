@@ -1,6 +1,7 @@
 # Generated packages and runtime evidence
 # packages/ 整目录不入 Git：zip/manifest/sha256 都是派生物，
 # 发布产物一律走 GitHub Releases（tools/package_skill.py 可随时再生）。
+# dist/ 仅为历史输出目录，新产物统一写到 packages/。
 dist/
 packages/
 _runtime/

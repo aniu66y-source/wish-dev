@@ -15,7 +15,7 @@
 ## 不同点
 不写死包数与并行度；不堆补丁不掩盖根因；要求上线就不许本地演示交工；中断恢复不重置失败计数；账本未落盘 `exit 2` 不开工。
 
-**平台前提**：Windows agent 软件 + 模型支持工具调用；不满足任一则降级为整理需求/计划，不声称完整开发。
+**平台前提**：能派生子智能体且支持工具调用的 agent 宿主（Windows 已实测，其他宿主需自行验证）；不满足任一则降级为整理需求/计划，不声称完整开发。
 
 - 当前版本 **2.0.0**（以 [SKILL.md](SKILL.md) frontmatter 为准）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
@@ -34,7 +34,7 @@
 ```
 
 **宿主要求**：能读文件、执行命令、访问授权项目、跟踪长任务。
-**平台前提**：Windows agent 软件 + 模型支持工具调用（不满足则降级为整理需求/计划）。
+**平台前提**：能派生子智能体 + 模型支持工具调用（Windows 已实测；不满足则降级为整理需求/计划）。
 
 **安装**：
 
@@ -79,7 +79,7 @@
 | **敏感凭据隔离** | 模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
 | **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`；`check-plan.mjs` 缺账本即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
-| **SKILL 质量门** | `package_skill.py --check` 输出 6 维质量报告（completeness/examples/conciseness/crossPlatform/license），非侵入、只报告不阻断 |
+| **SKILL 质量门** | `package_skill.py --check` 输出 5 维质量报告（completeness/examples/conciseness/crossPlatform/license），非侵入、只报告不阻断 |
 | **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
 
 ---
@@ -101,10 +101,13 @@ wish-dev/
 │   └── portability.md       安装与宿主能力分层
 ├── scripts/                 运行时脚本
 │   └── check-plan.mjs       机器计划门禁（Node 18+，含账本门禁）
+├── tools/                   维护工具（不随技能打包）
+│   ├── package_skill.py     结构校验 + 5 维质量报告 + 打包
+│   └── test_plan.mjs        门禁测试（node --test）
 └── AGENTS.md                仓库维护约定
 ```
 
-打包**只包含** `SKILL.md`、`references/`、`scripts/`；不含 Git 元数据、维护工具、日志或本机诊断文件。
+打包**只包含** `SKILL.md`、`references/`、`scripts/`（以及存在时的 `assets/`）；不含 Git 元数据、维护工具（`tools/`）、日志或本机诊断文件。
 
 ---
 
@@ -113,10 +116,10 @@ wish-dev/
 ```bash
 # 校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 上一步输出含 skill_quality（6 维质量报告）与 internal_links 命中数
+# 上一步输出含 skill_quality（5 维质量报告）与 internal_links 命中数
 
 # 机器计划门禁测试
-node --test tools/test_plan.mjs   # 36 项含账本门禁正/负例
+node --test tools/test_plan.mjs   # 38 项含账本门禁正/负例
 
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
 # 缺失 → exit 2 + ledger:false + not_started；存在 → exit 0 + ledger:true
