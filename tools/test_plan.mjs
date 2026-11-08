@@ -22,7 +22,7 @@ const fixture=()=>({
 const done=p=>{Object.assign(p.stories[0],{status:'done',context_id:'actual-run-01',evidence:['evidence/save.json'],review:{context_id:'actual-review-02',spec:'pass',quality:'pass'}});return p;};
 const reject=(name,change)=>test(name,()=>{const p=fixture();change(p);assert.ok(validatePlan(p).length>0);});
 test('dynamic package count has no implicit ceiling',()=>{const p=fixture();p.stories=Array.from({length:20},(_,i)=>({...structuredClone(p.stories[0]),id:`WP-${String(i+1).padStart(2,'0')}`}));assert.deepEqual(validatePlan(p),[]);});
-test('independent real host context identifiers need not be OpenCode sessions',()=>assert.deepEqual(validatePlan(done(fixture())),[]));
+test('independent real host context identifiers need not be subagent sessions',()=>assert.deepEqual(validatePlan(done(fixture())),[]));
 test('legacy S ids and distinct session ids remain readable',()=>{const p=done(fixture());p.stories[0].id='S-01';delete p.stories[0].context_id;delete p.stories[0].review.context_id;p.stories[0].sessionId='ses_impl';p.stories[0].review.sessionId='ses_review';assert.deepEqual(validatePlan(p),[]);});
 reject('explicit task budget still limits scope',p=>{p.budget.max_tasks=1;p.stories.push({...p.stories[0],id:'WP-02'});});
 reject('invalid task budget is rejected',p=>p.budget.max_tasks=0);

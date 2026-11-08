@@ -6,7 +6,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 ## 账本落盘硬门禁（ledger gate）
 
-`check-plan.mjs` 在 `prd.json` 结构校验通过后，还检查**同目录是否存在 `progress.md`**：缺失则 `exit 2`、输出 `ledger:false`、错误记 `ledger missing: … (not_started)`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落不得 fire 首个包。
+`check-plan.mjs` 在 `prd.json` 结构校验通过后，还检查**同目录是否存在 `progress.md`**：缺失则 `exit 2`、输出 `ledger:false`、错误记 `ledger missing: … (not_started)`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落不得派发首个子智能体任务。
 
 - 位置：`progress.md` 与 `prd.json` 同目录（`wishes/<wish-id>/` 或项目既有账本位置），不写进 prd.json。
 - 最小 5 字段（首次落盘即有）：`wish-id`、AC 清单、当前包、next action、blocker；后续追加按 [workflow.md](workflow.md) 与 [continuation.md](continuation.md)。
@@ -39,7 +39,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 `attempts` 统计已发起的修复尝试，不统计正常状态轮询。达到修复上限且仍未解决，或达到熔断条件时设 `blocked`，继续其他独立工作，不能靠归零继续。首次实现和轮询不计修复。任务数量超出预算时，缩小当前交付范围或取得扩大预算的授权，不静默丢弃需求。
 
-只有实际验收通过才设 `done`，并附非空 `evidence` 路径数组、实现 `context_id`，以及 `review: {"context_id":"实际独立评审上下文标识","spec":"pass","quality":"pass"}`。标识须能追溯真实会话/运行记录，实现和评审上下文不同，不能随意造两个字符串冒充独立评审。旧计划可沿用实现和 review.sessionId；context_id 若存在则优先使用。缺独立上下文则记录未评审，不伪造 OpenCode ID。只读提示词不代表系统隔离。路径均相对本轮愿望目录，位于 `evidence/`，不含 `..`、盘符或绝对路径。文件真实存在、内容与当前实现一致、会话真实独立，需要主控另行核查；字段和一串路径不能替代证据。
+只有实际验收通过才设 `done`，并附非空 `evidence` 路径数组、实现 `context_id`，以及 `review: {"context_id":"实际独立评审上下文标识","spec":"pass","quality":"pass"}`。标识须能追溯真实会话/运行记录，实现和评审上下文不同，不能随意造两个字符串冒充独立评审。旧计划可沿用实现和 review.sessionId；context_id 若存在则优先使用。缺独立上下文则记录未评审，不伪造子智能体/会话 ID。只读提示词不代表系统隔离。路径均相对本轮愿望目录，位于 `evidence/`，不含 `..`、盘符或绝对路径。文件真实存在、内容与当前实现一致、会话真实独立，需要主控另行核查；字段和一串路径不能替代证据。
 
 `progress.md` 追加记录 task ID、时间、提交/会话标识、验证结果、实际差异与下一步。用户未授权 Git 提交或发布时，记录工作区状态和差异即可，不自行提交或推送。临时输出遵守用户/项目运行目录，本机为 E:\Claude Agent。
 
