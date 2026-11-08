@@ -29,6 +29,7 @@ reject('invalid task budget is rejected',p=>p.budget.max_tasks=0);
 reject('repair budget cannot be exceeded',p=>p.stories[0].attempts=4);
 reject('duplicate acceptance id',p=>p.acceptance.push({...p.acceptance[0]}));
 reject('uncovered acceptance',p=>p.acceptance.push({id:'AC-02',text:'导出'}));
+test('uncovered criterion error names the id',()=>{const p=fixture();p.acceptance.push({id:'AC-02',text:'导出'});assert.ok(validatePlan(p).some(e=>e==='uncovered acceptance criterion: AC-02'));});
 reject('duplicate package id',p=>p.stories.push({...p.stories[0]}));
 reject('array is not an id',p=>p.stories[0].id=['WP-01']);
 reject('research cannot be uninspected',p=>p.research.status='pending');

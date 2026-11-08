@@ -17,7 +17,7 @@
 
 **平台前提**：能派生子智能体且支持工具调用的 agent 宿主（Windows 已实测，其他宿主需自行验证）；不满足任一则降级为整理需求/计划，不声称完整开发。
 
-- 当前版本 **2.0.0**（以 [SKILL.md](SKILL.md) frontmatter 为准）
+- 当前版本 **2.1.0**（以 [SKILL.md](SKILL.md) frontmatter 为准）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 
@@ -103,7 +103,8 @@ wish-dev/
 │   └── check-plan.mjs       机器计划门禁（Node 18+，含账本门禁）
 ├── tools/                   维护工具（不随技能打包）
 │   ├── package_skill.py     结构校验 + 5 维质量报告 + 打包
-│   └── test_plan.mjs        门禁测试（node --test）
+│   ├── test_plan.mjs        门禁测试（node --test）
+│   └── eval/                技能行为压力评估场景（RED-GREEN）
 └── AGENTS.md                仓库维护约定
 ```
 
@@ -116,10 +117,14 @@ wish-dev/
 ```bash
 # 校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 上一步输出含 skill_quality（5 维质量报告）与 internal_links 命中数
+# 输出含 skill_quality（5 维质量报告）、internal_links 命中数，
+# 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）
 
 # 机器计划门禁测试
-node --test tools/test_plan.mjs   # 38 项含账本门禁正/负例
+node --test tools/test_plan.mjs   # 39 项含账本门禁正/负例
+
+# 技能行为压力评估（改行为措辞或大版本发布前；方法见 tools/eval/README.md）
+# RED：未注入技能的新会话跑场景记录基线违规；GREEN：注入当前版重跑对照
 
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
 # 缺失 → exit 2 + ledger:false + not_started；存在 → exit 0 + ledger:true

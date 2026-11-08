@@ -6,6 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import zipfile
 
@@ -63,6 +65,28 @@ def skill_quality(manifest):
             "dimensions": dims, "verdict": verdict, "issues": issues}
 
 
+def js_syntax(path):
+    """Syntax-check a JS/ESM resource with `node --check`.
+
+    Returns True when checked, False when Node is unavailable (check skipped
+    and reported, so --check stays usable without Node); a real syntax error
+    raises and blocks the exit code, like the ast.parse check for .py.
+    """
+    node = shutil.which("node")
+    if node is None:
+        return False
+    try:
+        proc = subprocess.run([node, "--check", str(path)],
+                              capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise ValueError("JS syntax check timed out in " + str(path))
+    if proc.returncode != 0:
+        lines = [l for l in (proc.stderr or proc.stdout).splitlines() if l.strip()]
+        summary = next((l for l in lines if "Error" in l), lines[0] if lines else "")
+        raise ValueError("JS syntax error in " + str(path) + " (node --check): " + summary)
+    return True
+
+
 def validate(files):
     manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     front = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", manifest, re.S)
@@ -82,6 +106,7 @@ def validate(files):
         raise ValueError("Invalid skill description")
     packaged = {p.resolve() for p in files}
     link_count = 0
+    js_checked = js_skipped = 0
     for path in files:
         if not path.resolve().is_relative_to(ROOT.resolve()):
             raise ValueError("Resource leaves repository: " + str(path))
@@ -91,6 +116,11 @@ def validate(files):
                 raise ValueError("Unicode replacement character in " + str(path))
             if path.suffix == ".py":
                 ast.parse(source, filename=str(path))
+            if path.suffix in {".js", ".mjs"}:
+                if js_syntax(path):
+                    js_checked += 1
+                else:
+                    js_skipped += 1
             if path.suffix == ".md":
                 for target in re.findall(r"\]\(([^)]+)\)", source):
                     if "://" in target or target.startswith("#"):
@@ -104,6 +134,7 @@ def validate(files):
                     link_count += 1
     return {"name": name_match[1], "version": version_match[1],
             "file_count": len(files), "internal_links_checked": link_count,
+            "js_syntax_checked": js_checked, "js_syntax_skipped": js_skipped,
             "skill_quality": skill_quality(manifest)}
 
 
@@ -124,7 +155,9 @@ def package(files, metadata, output):
             member = metadata["name"] + "/" + path.relative_to(ROOT).as_posix()
             if archive.read(member) != path.read_bytes():
                 raise ValueError("ZIP member differs from source: " + member)
-    return {"archive": str(output), "bytes": output.stat().st_size,
+    # Report only the file name: the manifest ships as a public release asset,
+    # so a resolved local path would leak the maintainer's machine layout.
+    return {"archive": output.name, "bytes": output.stat().st_size,
             "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
 
 

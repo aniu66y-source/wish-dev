@@ -47,7 +47,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 检查器输出 next_actions：observe（观察原任务）、review（独立评审）、execute（就绪包候选）、final_acceptance（执行整体验收）、resolve_blockers（调查剩余阻塞）。脚本不执行任务、不改账本、不授予权限或判定交工；候选不代表全部同时派发，仍须核对实际资源、文件归属和未知写入。非零返回空列表。按 [continuation.md](continuation.md) 直接执行下一动作，不等用户继续。
 
-公司旧模板 ready → pending、review → verifying、integrated → done；迁移须逐包核实真实进度、原始 ID、实际证据及评审，保留历史映射，不批量改名后当成通过。旧 done 无当前证据则回到 verifying/pending。家里 schema 1 和 S-ID 保留，不重建任务。
+旧版模板状态映射：ready → pending、review → verifying、integrated → done；迁移须逐包核实真实进度、原始 ID、实际证据及评审，保留历史映射，不批量改名后当成通过。旧 done 无当前证据则回到 verifying/pending。既有 schema 1 计划与 S-ID 继续可用，不重建任务。
 
 ## 宏观状态归属
 
@@ -56,6 +56,8 @@ prd.json 只承载 task 级字段（status/attempts/evidence/review 等），不
 ## 恢复与熔断记录
 
 沿用 `progress.md`，每次修复发起前持久增加 `prd.json` 的 `attempts`，结果出来后追加：`时间 | task ID | attempts | no_progress_count | root_cause及same_cause_failures | last_meaningful_progress | blocked_reason | resume_condition | job/session ID`。初值为 0/无；续做读取最新记录并对照历史，不因新聊天、换代理或回退状态而清零。每次验收同时记录 [workflow.md](workflow.md) 要求的代码基线。
+
+执行中的冲突、歧义或计划缺陷，主对话在授权范围内**自行裁决并记账，不停下等待**——格式：`Ruling: <决定> — <依据> — <判断错误时的代价>`。仅不可逆/破坏性操作、安全敏感动作、共享分支副作用、授权缺口和**已触熔断的预算调整**（见下方恢复条件，须用户明确授权）才升级问用户；裁决不是隐瞒，用户凭 progress.md 中的 Ruling 记录可复核并撤销。
 
 `no_progress_count` 只在一次实际诊断/修复循环结束且没有可验证进展时增加；普通状态轮询既不增加也不重置。可复现的新定位证据、排除关键假设的实测或已通过的相关回归才算有意义进展；搜索次数、换措辞、未经验证的网上方案不算。记录证据后可重置连续无进展计数，但 `attempts` 不减；同根因的确认失败单独累计，不能靠搜索重置，根因未知就写未知，不编造一致根因。
 

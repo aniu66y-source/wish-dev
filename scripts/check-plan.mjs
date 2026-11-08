@@ -121,7 +121,7 @@ export function validatePlan(plan) {
     visiting.delete(id);visited.add(id);
   }
   for(const id of tasks.keys())visit(id);
-  for(const id of criteria)if(!covered.has(id))errors.push('uncovered acceptance criterion');
+  for(const id of criteria)if(!covered.has(id))errors.push('uncovered acceptance criterion: '+id);
   return errors;
 }
 
