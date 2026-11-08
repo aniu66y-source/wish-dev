@@ -17,7 +17,7 @@
 
 **平台前提**：能派生子智能体且支持工具调用的 agent 宿主（Windows 已实测，其他宿主需自行验证）；不满足任一则降级为整理需求/计划，不声称完整开发。
 
-- 当前版本 **2.1.0**（以 [SKILL.md](SKILL.md) frontmatter 为准）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（本轮维护后为 **2.1.2**）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 

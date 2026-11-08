@@ -9,7 +9,7 @@
 最低字段：
 
 ~~~text
-task-id / project / original-wish / delivery-target / acceptance-scope
+task-id / project / runtime_root / original-wish / delivery-target / acceptance-scope
 requirement-version / design-version / contract-version / source-baseline
 authorized-scope / forbidden-actions / assumptions / decisions / risks
 user-dirty-files / owned-files / phase / packages / dependencies
@@ -73,7 +73,7 @@ last-change / concrete-next-action / blocker / handover-status
 
 ## 子智能体任务下发契约（主对话 → 执行子智能体）
 
-主对话把任务下发给宿主可派生的子智能体（默认 `general-purpose` 或等价执行体）。下发块用下方 12 项，全部填实际内容或后端可读取的绝对路径，不传"帮我开发"或不可访问的聊天引用：
+主对话把任务下发给宿主可派生的子智能体（默认 `general-purpose` 或等价执行体），**逐线以独立子智能体派发，不用团队队友模式**（不组队、不让子智能体互发消息或共享团队任务列表、不在队友间转派；跨线协调只走主对话，见 SKILL.md 总纲「派发模式」）。下发块用下方 12 项，全部填实际内容或后端可读取的绝对路径，不传"帮我开发"或不可访问的聊天引用：
 
 ~~~markdown
 # T-2-01：具体目标
@@ -167,6 +167,8 @@ AC-ID | 需求/交付结果 | 设计/契约 | 工作包 | 验证环境/操作 | 
 ## 临时资源与进程收尾
 
 创建时在 progress.md 登记：task/run ID、时间、精确绝对路径或 PID、进程启动时间/可执行文件/父子归属、用途、是否共享、保留和清理条件。不要登记含凭据的完整命令行。临时目录置于用户运行根下独立子目录，不能把整个运行根、项目或全局缓存登记成一次性目录。
+
+可重定向的包/构建/下载缓存（npm、pip、go、cargo 等）统一指向本轮运行根内的缓存子目录，使归属可界定、可安全清理；不可重定向的保持宿主默认，归入下方第 3 条共享设施，收尾只登记不动。运行根实际路径在会话开始时固化进 progress.md 的 `runtime_root` 字段，主对话与各子智能体共用同一落点，避免各自推断。
 
 1. 先核对相关 job/会话已完成或确实停止，以及后续验证/用户预览是否仍需要资源。unknown、观察超时、取消已请求都不算停止；可能仍写入时不删。失败/阻塞时保留最小诊断和恢复必要信息，释放其他已无依赖资源。
 2. 停本轮自建且不再需要的开发/测试进程，优先正常退出；必要时逐 PID 再核启动时间、exe 和父子归属，防止 PID 复用。不按 node/powershell 等名字批量杀，不停其他项目、宿主或交付需要的运行入口。
