@@ -3,7 +3,7 @@
 > 用户给需求 → OpenCode + OMO 协调者动态分包并行 → 可验收、可维护的交付物。
 > 采用通用 Agent Skills 目录结构，适用于**任意支持工具调用的 agent 软件宿主**（Windows 首选）。
 
-- 当前版本 **1.3.5**（以 [SKILL.md](SKILL.md) frontmatter 为准）
+- 当前版本 **1.3.6**（以 [SKILL.md](SKILL.md) frontmatter 为准）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 
@@ -65,6 +65,8 @@
 | **敏感凭据隔离** | 工具链/模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
 | **数据目录统一** | 可选第 7 层：把 OpenCode data/cache/config/state 归到单一 root（E→D→C 降级），幂等迁移，写 4 个 XDG 环境变量 |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
+| **账本落盘门禁** | 首个包 fire 前须同时落 `prd.json` + `progress.md`；`check-plan.mjs` 缺账本即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
+| **SKILL 质量门** | `package_skill.py --check` 输出 6 维质量报告（completeness/examples/conciseness/crossPlatform/license），非侵入、只报告不阻断 |
 | **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
 
 ---
@@ -104,10 +106,15 @@ wish-dev/
 ```bash
 # 校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
+# 上一步输出含 skill_quality（6 维质量报告）与 internal_links 命中数
 
 # 离线自检
 python -B scripts/self_test.py
-node --test tools/test_plan.mjs
+node --test tools/test_plan.mjs   # 36 项含账本门禁正/负例
+
+# 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
+# 缺失 → exit 2 + ledger:false + not_started；存在 → exit 0 + ledger:true
+node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"
 
 # 生成发布包（不入 git，仅本地派生物）
 python -B tools/package_skill.py --output packages/wish-dev-<ver>.zip

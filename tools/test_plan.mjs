@@ -55,13 +55,14 @@ test('one blocked package does not stop an independent package',()=>{const p=fix
 test('all packages done requests final acceptance rather than declaring delivery',()=>assert.deepEqual(nextActions(done(fixture())),[{action:'final_acceptance'}]));
 test('only blocked work requests blocker investigation',()=>{const p=fixture();p.stories[0].status='blocked';assert.deepEqual(nextActions(p),[{action:'resolve_blockers',task_ids:['WP-01']}]);});
 
-function cli(source, check){
+function cli(source, check, {withLedger=true}={}){
   const root=process.env.WISH_DEV_RUNTIME_ROOT??(process.platform==='win32'?'E:/Claude Agent/wish-dev/runtime':path.join(os.tmpdir(),'wish-dev'));
   fs.mkdirSync(root,{recursive:true});
   const run=fs.mkdtempSync(path.join(root,'plan-test-'));
   try{
     const input=path.join(run,'中文 计划.json');
     fs.writeFileSync(input,typeof source==='function'?source(run):source);
+    if(withLedger)fs.writeFileSync(path.join(run,'progress.md'),'# progress\n');
     const script=fileURLToPath(new URL('../scripts/check-plan.mjs',import.meta.url));
     const result=spawnSync(process.execPath,[script,input],{encoding:'utf8',timeout:10000});
     assert.equal(result.error,undefined);
@@ -73,7 +74,17 @@ test('CLI reads BOM plans and never executes verify commands',()=>{
     const p=fixture(),marker=path.join(run,'must-not-exist.txt').replaceAll('\\','/');
     p.stories[0].verify=[{kind:'command',run:`"${process.execPath}" -e "require('node:fs').writeFileSync('${marker}', 'ran')"`}];
     return '\uFEFF'+JSON.stringify(p);
-  },(result,run)=>{assert.equal(result.status,0);assert.deepEqual(JSON.parse(result.stdout).next_actions,[{action:'execute',task_id:'WP-01'}]);assert.equal(result.stderr,'');assert.equal(fs.existsSync(path.join(run,'must-not-exist.txt')),false);});
+  },(result,run)=>{assert.equal(result.status,0);const data=JSON.parse(result.stdout);assert.equal(data.ledger,true);assert.deepEqual(data.next_actions,[{action:'execute',task_id:'WP-01'}]);assert.equal(result.stderr,'');assert.equal(fs.existsSync(path.join(run,'must-not-exist.txt')),false);});
+});
+test('valid plan without progress.md is rejected as not_started',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    assert.equal(result.status,2);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,false);
+    assert.equal(data.ok,false);
+    assert.deepEqual(data.next_actions,[]);
+    assert.ok(data.errors.some(e=>e.includes('ledger missing')));
+  },{withLedger:false});
 });
 test('malformed CLI input exposes no next action or supplied content',()=>{
   cli('{"secret-marker":',result=>{assert.equal(result.status,2);const data=JSON.parse(result.stdout);assert.equal(data.ok,false);assert.deepEqual(data.next_actions,[]);assert.equal(result.stdout.includes('secret-marker'),false);});

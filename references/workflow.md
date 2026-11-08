@@ -4,6 +4,8 @@
 
 每轮临时资源使用独立 <runtime>/<project-slug>/<task-id>/<run-id>/，本机运行根为 E:\Claude Agent，桥接可通过参数或 WISH_DEV_RUNTIME_ROOT 指定。正式账本和有效证据保存在 wishes/<wish-id>/ 或项目既有位置；运行目录只存临时日志和工作副本，不作为唯一验收依据。结束前将必要脱敏结果归档并修正引用。优先更新已有记录，避免多套真相来源。
 
+**账本落盘硬门禁**：首个包 fire 前，`wishes/<wish-id>/` 下须同时存在 `prd.json` 与 `progress.md`；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`（见 [plan-contract.md](plan-contract.md) 账本门禁节）。账本未落不进入产品实现。
+
 最低字段：
 
 ~~~text

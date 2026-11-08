@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 // Structural gate only: never executes the plan's commands or claims their success.
@@ -141,7 +142,10 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   try{
     if(process.argv.length!==3)throw new Error('usage: node check-plan.mjs <prd.json>');
     const plan=JSON.parse(fs.readFileSync(process.argv[2],'utf8').replace(/^\uFEFF/,''));
+    const ledgerPath=path.join(path.dirname(process.argv[2]),'progress.md');
+    const ledgerOk=fs.existsSync(ledgerPath);
     const errors=validatePlan(plan);
-    console.log(JSON.stringify({ok:errors.length===0,errors,next_actions:errors.length?[]:nextActions(plan)},null,2));process.exitCode=errors.length?2:0;
-  }catch{console.log(JSON.stringify({ok:false,errors:['Plan is unreadable, invalid JSON, or no plan path supplied.'],next_actions:[]}));process.exitCode=2;}
+    if(!errors.length&&!ledgerOk)errors.push('ledger missing: progress.md must sit next to prd.json before the first package fires (not_started)');
+    console.log(JSON.stringify({ok:!errors.length,errors,ledger:ledgerOk,ledger_path:ledgerPath,next_actions:errors.length?[]:nextActions(plan)},null,2));process.exitCode=errors.length?2:0;
+  }catch{console.log(JSON.stringify({ok:false,errors:['Plan is unreadable, invalid JSON, or no plan path supplied.'],ledger:false,ledger_path:null,next_actions:[]}));process.exitCode=2;}
 }

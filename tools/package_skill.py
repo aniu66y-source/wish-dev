@@ -28,6 +28,41 @@ def resources():
     return sorted(result)
 
 
+def skill_quality(manifest):
+    """Lightweight, non-blocking quality read on SKILL.md (clarity/completeness/
+    conciseness/examples/crossPlatform). Mirrors a _scores.json style report
+    without the A/B impact harness: it only reports, never gates the exit code."""
+    lines = manifest.count("\n") + 1
+    examples = len(re.findall(r"(?m)^[~`]{3,}", manifest)) // 2
+    desc = re.search(r"^description:\s*(.+)$", manifest, re.M)
+    desc_chars = len(desc[1]) if desc else 0
+    dims, issues = {}, []
+    dims["completeness"] = "PASS" if lines >= 40 else "WEAK"
+    if dims["completeness"] == "WEAK":
+        issues.append({"severity": "MEDIUM", "category": "completeness",
+                       "detail": f"SKILL.md only {lines} lines; expected a full flow"})
+    dims["examples"] = "PASS" if examples >= 1 else "WEAK"
+    if dims["examples"] == "WEAK":
+        issues.append({"severity": "MEDIUM", "category": "examples",
+                       "detail": "no fenced example block found in SKILL.md"})
+    if desc_chars == 0:
+        dims["conciseness"] = "WEAK"
+        issues.append({"severity": "HIGH", "category": "conciseness",
+                      "detail": "frontmatter description missing"})
+    elif desc_chars > 200:
+        dims["conciseness"] = "WEAK"
+        issues.append({"severity": "LOW", "category": "conciseness",
+                       "detail": f"description is {desc_chars} chars; keep it scannable (<200)"})
+    else:
+        dims["conciseness"] = "PASS"
+    dims["crossPlatform"] = "PASS" if re.search(r"(?m)^\s*compatibility:", manifest) else "WEAK"
+    dims["license"] = "PASS" if re.search(r"(?m)^\s*license:", manifest) else "WEAK"
+    weak = [k for k, v in dims.items() if v == "WEAK"]
+    verdict = "PASS" if not weak else f"{len(weak)} WEAK dimension(s)"
+    return {"lines": lines, "example_blocks": examples, "description_chars": desc_chars,
+            "dimensions": dims, "verdict": verdict, "issues": issues}
+
+
 def validate(files):
     manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     front = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", manifest, re.S)
@@ -68,7 +103,8 @@ def validate(files):
                         raise ValueError("Missing packaged reference: " + target)
                     link_count += 1
     return {"name": name_match[1], "version": version_match[1],
-            "file_count": len(files), "internal_links_checked": link_count}
+            "file_count": len(files), "internal_links_checked": link_count,
+            "skill_quality": skill_quality(manifest)}
 
 
 def package(files, metadata, output):

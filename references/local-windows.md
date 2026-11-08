@@ -15,7 +15,7 @@
 对 `setup-bootstrap` 六层做只读实测，结果全量 PASS；以下为对齐结论，仅供后续核对，不替代调用时重新探测：
 
 - CLI 现为 `opencode 1.19.5`（较 10-26 快照 1.19.4 已漂移）；Node `v22.22.2`。
-- OMO 经 `omo-compatible` 本地 dist 的 file 路径加载，`default_agent=sisyphus`；平台二进制 `@opentui/core-win32-x64` 就位。
+- OMO（oh-my-openagent）`5.1.63` 经 `omo-compatible` 本地 dist 的 file 路径加载（较 10-26 快照 5.1.47 已漂移），`default_agent=sisyphus`；平台二进制 `@opentui/core-win32-x64` 就位。
 - 模型 `codebuddy/deepseek-v4.1-flash`；凭据走 `{env:CODEBUDDY_API_KEY}` 占位，该变量 User 级已设，配置文件内无明文密钥。
 - **4096 归属对齐**：监听 PID == `server-instance.json` 的 `serverPid`（同为 npm 全局 `opencode.exe`），判定为**非孤儿**健全态；`/health` 返回 401 = 服务存活且需鉴权，符合预期。登录任务 `State=Ready` 只是 spawn 包装体正常退出（LastResult 0xC000013a），不影响服务本身，**无需 4 步重启**。B 方案 pre-check 在此状态下会直接放行。
 

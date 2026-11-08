@@ -4,6 +4,15 @@
 
 Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实现前、回退状态后、每次标 done 后和最终交付前运行；非零先纠正计划。缺 Node 按 [setup-bootstrap.md](setup-bootstrap.md) 自动安装 Node ≥ 18 并复测，不把手填 ok 当门禁通过；补齐前可继续其他独立调查/规划。纯只读包在 allowed_files 声明可读范围及禁止写入，字段不授予写权。
 
+## 账本落盘硬门禁（ledger gate）
+
+`check-plan.mjs` 在 `prd.json` 结构校验通过后，还检查**同目录是否存在 `progress.md`**：缺失则 `exit 2`、输出 `ledger:false`、错误记 `ledger missing: … (not_started)`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落不得 fire 首个包。
+
+- 位置：`progress.md` 与 `prd.json` 同目录（`wishes/<wish-id>/` 或项目既有账本位置），不写进 prd.json。
+- 最小 5 字段（首次落盘即有）：`wish-id`、AC 清单、当前包、next action、blocker；后续追加按 [workflow.md](workflow.md) 与 [continuation.md](continuation.md)。
+- 结构错误优先级高于账本：`prd.json` 结构未过时即使有 `progress.md` 仍 `exit 2`，且不误报 ledger。
+- `validatePlan` 保持纯结构、不读文件系统；账本门禁只在 CLI 入口触发，不影响库式 import。
+
 调研/需求/设计尚未完成时可维护同一份明确标记的计划草稿，非零是预期结果；允许继续不依赖缺项的只读调查与规划，不能据此启动产品实现或伪填 research.complete。门禁不通过只阻止产品实现、完成标记及依赖推进，不阻止修正计划本身。
 
 ## JSON 字段
@@ -15,7 +24,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - `architecture.approach` 为总体结构；`architecture.simplification` 说明如何保持简洁和统一职责。
 - `architecture.concurrency`：适用时 `{applicable:true, assumptions, controls, verification}`；不适用时 `{applicable:false, reason}`。
 - `architecture.load_balancing`：适用时 `{applicable:true, strategy, state, failure_handling, verification}`；不适用时 `{applicable:false, reason, scale_trigger}`。每个说明字段为有意义的非空字符串。
-- `budget`：正整数 `max_fix_attempts`，默认 3、用户实际预算优先。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
+- `budget`：正整数 `max_fix_attempts`，必填、建议 3、用户实际预算优先（缺省会过不了门禁报 `must be a positive integer`，无内置兜底）。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
 - `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "WP-01"`（旧 `S-01` 同样支持）、`title`、`status`、`attempts`、非空 `allowed_files`、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。`depends_on` 若存在必须引用已知 task ID，不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
 
 ## 状态和验证

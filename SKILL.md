@@ -2,9 +2,12 @@
 name: wish-dev
 description: 用于用户提出软件开发愿望、要求许愿式开发或续做已有交付任务时。适用于新软件落地及现有项目功能交付；仅安装或配置技能时不启动产品开发，普通问答及单纯审查不进入完整开发循环。
 metadata:
-  version: "1.3.5"
+  version: "1.3.6"
   language: "zh-CN"
   runtime: "OpenCode with OMO plugin; OpenCode MCP; Node 18+ for plan gate"
+  license: "Proprietary; no OSS license attached (see README License section)"
+  compatibility: "Windows agent software; current model must support tool calling"
+  tags: "development, orchestration, subagents, spec-driven, code-quality"
 ---
 
 # 许愿式开发
@@ -41,6 +44,8 @@ metadata:
 使用 [references/lifecycle.md](references/lifecycle.md) 的阶段结果和完成依据，并按 [references/workflow.md](references/workflow.md) 建立任务包、追踪矩阵及检查点。步骤可以合并、迭代和并行；按项目规模裁剪文档，不强制每阶段单独建文件或审批。明显不适用的环节注明原因，不擅自删掉用户要求的范围。
 
 复用现有项目记录建立一个稳定 wish ID 的账本；没有现成结构时使用 `wishes/<wish-id>/`。原始愿望、验收和设计可简短合并，机器计划统一为 `prd.json`，追加记录为 `progress.md`，正式证据为 `evidence/`。按 [references/plan-contract.md](references/plan-contract.md) 执行 `node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"`。规划草稿可迭代；产品实现前、回退状态后、标记 `done` 后及最终交付前均检查。门禁失败先纠正清单；通过只证明结构，仍须实际验证。包数和并行数不固定，明确用户预算仍须遵守。
+
+**账本落盘硬门禁**：`prd.json` 结构校验通过后，`check-plan.mjs` 还要求同目录存在 `progress.md`，缺失即 `exit 2` + `ledger:false` + `not_started`。首个包 `fire` 前必须同时落 `prd.json` 与 `progress.md`（最小 5 字段：wish-id、AC 清单、当前包、next action、blocker）；账本未落不进入产品实现。
 
 | 环节 | 需要取得的结果 |
 |---|---|
