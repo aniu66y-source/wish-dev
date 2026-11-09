@@ -2,11 +2,11 @@
 
 ## 状态与真相来源
 
-每轮临时资源使用独立 <runtime>/<project-slug>/<task-id>/<run-id>/；<runtime> 由 `WISH_DEV_RUNTIME_ROOT`、显式参数或用户指定目录决定（Windows 本机示例 `E:\Claude Agent`），不写进项目或全局缓存。正式账本和有效证据保存在 wishes/<wish-id>/ 或项目既有位置；运行目录只存临时日志和工作副本，不作为唯一验收依据。结束前将必要脱敏结果归档并修正引用。优先更新已有记录，避免多套真相来源。
+每轮临时资源使用独立 <runtime>/<project-slug>/<task-id>/<run-id>/；<runtime> 由 `WISH_DEV_RUNTIME_ROOT`、显式参数或用户指定目录决定，不写进项目或全局缓存。正式账本和有效证据保存在 wishes/<wish-id>/ 或项目既有位置；运行目录只存临时日志和工作副本，不作为唯一验收依据。结束前将必要脱敏结果归档并修正引用。优先更新已有记录，避免多套真相来源。
 
-**账本落盘硬门禁**：派发首个子智能体任务前，`wishes/<wish-id>/` 下须同时存在 `prd.json` 与 `progress.md`；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`（见 [plan-contract.md](plan-contract.md) 账本门禁节）。账本未落不进入产品实现。
+**账本落盘硬门禁**：派发首个子智能体任务前，`wishes/<wish-id>/` 下须同时存在 `prd.json` 与开头 40 行内含 5 字段表头的 `progress.md`；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`，表头字段不全同样拒绝（见 [plan-contract.md](plan-contract.md) 账本门禁节）。账本未落不进入产品实现。
 
-最低字段：
+记账字段（主对话维护，非机器门禁；门禁只强制 5 字段表头，见 [plan-contract.md](plan-contract.md)）：
 
 ~~~text
 task-id / project / runtime_root / original-wish / delivery-target / acceptance-scope
@@ -62,6 +62,7 @@ last-change / concrete-next-action / blocker / handover-status
 
 规划时**分离模块、多线并行**以提高交付速度。每条并行线用独立任务编号 **`T-<线>-<序号>`**（如 `T-2-01` = 第 2 线第 1 任务）标识，避免交接漂移：
 
+- **编号即账本 id**：`prd.json` 的 `stories[].id` 与下发块「任务编号」、交付块、`depends_on` 用同一字符串（如 `T-2-01`），不维护第二套编号，避免交接时翻译出错。
 - 同批号（同 `<线>`）的任务**可并行**；跨线任务靠"依赖"字段表达先后。
 - 前置任务未 `done` 时，依赖它的下游任务不开始。
 - 主对话据此判断"哪些线现在能领"，不逐条问用户。
@@ -81,7 +82,7 @@ last-change / concrete-next-action / blocker / handover-status
 任务目标：一句话说清本任务要交付什么。
 任务背景：为什么做、承接哪条线、相关 AC 编号。
 执行范围：允许触碰的模块/文件/接口边界。
-依赖：前置任务编号（T-1-03 等）；无则写"无"。依赖未 done 不开始。
+依赖：前置任务编号（T-1-03 等，与 prd.json 的 `stories[].id` 同一串）；无则写"无"。依赖未 done 不开始。
 允许写入文件：本任务可写的文件清单/通配（独占归属）。
 禁止写入：共享契约、锁文件、其他线文件（唯一写入人=集成线）。
 执行要求：沿用的统一模块/状态来源、结构清理边界、代码质量指引路径。
@@ -92,7 +93,7 @@ last-change / concrete-next-action / blocker / handover-status
 ~~~
 
 **下发附加字段（主对话随块带上，不计入 12 项）：**
-- 修复预算：默认 3 次；耗尽或 3 次同根因 → 回主对话标 `blocked`。
+- 修复预算：默认 3 次；耗尽、连续 3 次无进展或 3 次同根因 → 回主对话标 `blocked`（计数按 [plan-contract.md](plan-contract.md) 持久保存）。
 - 子智能体 ID/会话 ID：派发后登记，续做用。
 - 模型档位：宿主支持指定子智能体模型时**显式选档，不省略**（省略通常继承会话最贵模型，静默推高成本）——机械实现（1–2 文件、规格完整）用低档；跨文件集成与排障用中档；架构设计、整体验收与独立评审用最高档；预算高于默认 3 次时，修复循环的后期轮次（第 4–5 轮及以后）至少比卡住的实现者升一档。按"总轮次成本"权衡：便宜模型多轮可能比中档模型更贵。
 - 大块工件走文件：完整任务书、接口细节或长上下文落运行目录文件，下发块只带**绝对路径 + 一行说明**，不把整段内容贴进派发 prompt；后续派发不层层累积历史任务摘要——子智能体需要的是本任务、相邻接口与全局约束，不是会话编年史。

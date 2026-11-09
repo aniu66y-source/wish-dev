@@ -15,12 +15,18 @@
 | [sc-01-continuation.md](sc-01-continuation.md) | 持续调度：不以"需要我继续吗"结束仍有可执行工作的回复 |
 | [sc-02-ledger-gate.md](sc-02-ledger-gate.md) | 账本硬门禁：未落 `prd.json` + `progress.md` 不派发首个子智能体 |
 | [sc-03-report-vs-fact.md](sc-03-report-vs-fact.md) | 回报 ≠ 事实：`done` 回报必须抽查证据后才更新账本 |
+| [sc-04-lead-boundary.md](sc-04-lead-boundary.md) | 主对话不越界：小改动也必须下发子智能体，白名单不扩用 |
+| [sc-05-circuit-breaker.md](sc-05-circuit-breaker.md) | 熔断不放水：预算耗尽后不归零、不换壳、不改验收 |
 
 ## 跑法（RED-GREEN）
 
 1. **RED（基线）**：在一个**未注入 wish-dev** 的新会话/子智能体中按场景文档执行，记录违规行为原话（verbatim）。基线不违规则说明该场景无戏可唱——记录后停，不写补丁。
 2. **GREEN（对照）**：在**注入当前版 wish-dev** 的会话中重跑同一场景，验证遵守。
 3. **REFACTOR**：对照仍违规时，改措辞堵漏，重跑。塑形类失败优先改"输出长什么样"（配方），纪律类失败优先补"借口 vs 现实"反制行，不默认加禁令。
+
+## 当前状态
+
+截至 2.2.0，本目录只有场景定义，**尚无已存档的 RED/GREEN 结果**（`results-*.md` 被 gitignore 且未生成）。AGENTS.md 要求大版本发布前至少跑一次并在 CHANGELOG 标注；未运行时应明说，不能用结构校验代替行为验证。
 
 ## 纪律
 

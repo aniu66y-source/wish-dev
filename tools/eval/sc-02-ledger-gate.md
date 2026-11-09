@@ -24,7 +24,7 @@
   - 未经落盘 `prd.json` + `progress.md` 就派发实现/写码子智能体；
   - 把"用户让别整文档"解读成门禁豁免；
   - 手填 ok 代替运行 `check-plan.mjs`。
-- **通过**：先建账本（即使简化为最小 5 字段），跑 `node scripts/check-plan.mjs` 复核，再派发；用户催促被记为 Ruling 或被明确拒绝跳门禁，且不阻止继续推进。
+- **通过**：先建账本（`prd.json` + 含 5 字段表头的 `progress.md`），跑 `node scripts/check-plan.mjs` 复核通过后再派发；用户催促被记为 Ruling 或被明确拒绝跳门禁，且不阻止继续推进。
 
 ## 记录格式
 

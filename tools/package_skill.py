@@ -15,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_DIRS = ("references", "scripts", "assets")
 EXCLUDED = {"__pycache__"}
 TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
+# Contract anchors: the load-bearing rules a later edit must not silently drop.
+# Missing anchors are reported as WEAK, never as a non-zero exit.
+CONTRACT_ANCHORS = {
+    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs"),
+    "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
+                               r"下发块用下方 12 项"),
+    "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id"),
+}
 
 
 def resources():
@@ -30,9 +38,23 @@ def resources():
     return sorted(result)
 
 
+def contract_gaps():
+    """Anchors (multiline regex, heading-anchored where it matters) gone from source.
+
+    Substring presence was too weak: moving a rule elsewhere kept the gate green.
+    A regex miss still only reports WEAK and never changes the exit code."""
+    gaps = []
+    for name, anchors in CONTRACT_ANCHORS.items():
+        path = ROOT / name
+        source = path.read_text(encoding="utf-8") if path.is_file() else ""
+        gaps.extend(name + ' 缺少锚点「' + anchor + '」' for anchor in anchors
+                    if not re.search(anchor, source, re.M))
+    return gaps
+
+
 def skill_quality(manifest):
-    """Lightweight, non-blocking quality read on SKILL.md (completeness/examples/
-    conciseness/crossPlatform/license). Mirrors a _scores.json style report
+    """Lightweight, non-blocking quality read (completeness/examples/conciseness/
+    crossPlatform/license/contracts). Mirrors a _scores.json style report
     without the A/B impact harness: it only reports, never gates the exit code."""
     lines = manifest.count("\n") + 1
     examples = len(re.findall(r"(?m)^[~`]{3,}", manifest)) // 2
@@ -59,10 +81,15 @@ def skill_quality(manifest):
         dims["conciseness"] = "PASS"
     dims["crossPlatform"] = "PASS" if re.search(r"(?m)^\s*compatibility:", manifest) else "WEAK"
     dims["license"] = "PASS" if re.search(r"(?m)^\s*license:", manifest) else "WEAK"
+    gaps = contract_gaps()
+    dims["contracts"] = "PASS" if not gaps else "WEAK"
+    if gaps:
+        issues.append({"severity": "HIGH", "category": "contracts",
+                       "detail": "; ".join(gaps)})
     weak = [k for k, v in dims.items() if v == "WEAK"]
     verdict = "PASS" if not weak else f"{len(weak)} WEAK dimension(s)"
     return {"lines": lines, "example_blocks": examples, "description_chars": desc_chars,
-            "dimensions": dims, "verdict": verdict, "issues": issues}
+            "dimensions": dims, "contract_gaps": gaps, "verdict": verdict, "issues": issues}
 
 
 def js_syntax(path):

@@ -6,11 +6,25 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 ## 账本落盘硬门禁（ledger gate）
 
-`check-plan.mjs` 在 `prd.json` 结构校验通过后，还检查**同目录是否存在 `progress.md`**：缺失则 `exit 2`、输出 `ledger:false`、错误记 `ledger missing: … (not_started)`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落不得派发首个子智能体任务。
+`check-plan.mjs` 在 `prd.json` 结构校验通过后，检查**同目录的 `progress.md`**：文件缺失则 `exit 2`、`ledger:false`、错误记 `ledger missing: … (not_started)`；文件存在但**开头 40 行内 5 字段表头不全**（含空文件、表头被追加到日志末尾）同样 `exit 2`、`ledger:false`、错误记 `ledger field missing: <字段名[, 字段名…]>`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落或表头不全，不得派发首个子智能体任务。
 
 - 位置：`progress.md` 与 `prd.json` 同目录（`wishes/<wish-id>/` 或项目既有账本位置），不写进 prd.json。
-- 最小 5 字段（首次落盘即有）：`wish-id`、AC 清单、当前包、next action、blocker；后续追加按 [workflow.md](workflow.md) 与 [continuation.md](continuation.md)。
-- 结构错误优先级高于账本：`prd.json` 结构未过时即使有 `progress.md` 仍 `exit 2`，且不误报 ledger。
+- 最小 5 字段表头须落在文件**开头 40 行内**（首次落盘即有，逐行 `key: value`，值非空；可用 `- ` 列表项、`## ` 标题、`**key**:` 加粗或表格行 `| key | value |`）：
+
+~~~markdown
+# progress
+- wish-id: WISH-01
+- acceptance: AC-01 保存后刷新仍可读取
+- current-package: T-1-01
+- next-action: 派发 T-1-01 实现
+- blocker: 无
+~~~
+
+- 字段名支持中文别名：`wish-id`｜愿望 ID、`acceptance`｜AC 清单、`current-package`｜当前包、`next-action`｜下一步（下一个动作）、`blocker`｜阻塞（阻塞项）。表头之后按 [workflow.md](workflow.md) 与 [continuation.md](continuation.md) 追加记录。
+- 门禁只强制这 5 行表头；其余记账字段（见 [workflow.md](workflow.md)）供人读与续做，不做机器校验。
+- 门禁**不校验**：表头 `wish-id` 与 `prd.json.wish_id` 是否一致、`done` 任务是否在 `progress.md` 有记录、`allowed_files` 是否被实际遵守。这些由主对话对照账本核查，门禁通过不代表账本内容真实。
+- `ledger` 标志语义务求「账本可用」：文件缺失、不可读或表头不全均为 `false`；表头齐全才 `true`。
+- 结构错误优先级高于账本：`prd.json` 结构未过时只报结构错误，不把缺字段当首要阻塞；结构修好后再暴露账本问题。
 - `validatePlan` 保持纯结构、不读文件系统；账本门禁只在 CLI 入口触发，不影响库式 import。
 
 调研/需求/设计尚未完成时可维护同一份明确标记的计划草稿，非零是预期结果；允许继续不依赖缺项的只读调查与规划，不能据此启动产品实现或伪填 research.complete。门禁不通过只阻止产品实现、完成标记及依赖推进，不阻止修正计划本身。
@@ -25,7 +39,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - `architecture.concurrency`：适用时 `{applicable:true, assumptions, controls, verification}`；不适用时 `{applicable:false, reason}`。
 - `architecture.load_balancing`：适用时 `{applicable:true, strategy, state, failure_handling, verification}`；不适用时 `{applicable:false, reason, scale_trigger}`。每个说明字段为有意义的非空字符串。
 - `budget`：正整数 `max_fix_attempts`，必填、建议 3、用户实际预算优先（缺省会过不了门禁报 `must be a positive integer`，无内置兜底）。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
-- `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "WP-01"`（旧 `S-01` 同样支持）、`title`、`status`、`attempts`、非空 `allowed_files`、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。`depends_on` 若存在必须引用已知 task ID，不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
+- `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "T-1-01"`（`T-<线>-<序号>`，与下发块「任务编号」、交付块、`depends_on` 用**同一字符串**，避免二次编号；旧 `WP-01`/`S-01` 仍接受但不再用于新计划）、`title`、`status`、`attempts`、非空 `allowed_files`、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。`depends_on` 若存在必须引用已知 task ID（同一套编号），不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
 
 ## 状态和验证
 
@@ -41,7 +55,9 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 只有实际验收通过才设 `done`，并附非空 `evidence` 路径数组、实现 `context_id`，以及 `review: {"context_id":"实际独立评审上下文标识","spec":"pass","quality":"pass"}`。标识须能追溯真实会话/运行记录，实现和评审上下文不同，不能随意造两个字符串冒充独立评审。旧计划可沿用实现和 review.sessionId；`context_id` 与 `sessionId` 均参与比对——任一侧已有标识与另一侧重合即判非独立，不能用另一字段绕开。缺独立上下文则记录未评审，不伪造子智能体/会话 ID。只读提示词不代表系统隔离。路径均相对本轮愿望目录，位于 `evidence/`，不含 `..`、盘符或绝对路径。文件真实存在、内容与当前实现一致、会话真实独立，需要主控另行核查；字段和一串路径不能替代证据。
 
-`progress.md` 追加记录 task ID、时间、提交/会话标识、验证结果、实际差异与下一步。用户未授权 Git 提交或发布时，记录工作区状态和差异即可，不自行提交或推送。临时输出遵守用户/项目运行目录（`WISH_DEV_RUNTIME_ROOT` 或用户指定；Windows 本机示例 `E:\Claude Agent`）。
+**宿主不返回可引用会话/任务 ID 时**（无 ID 则上面的 `done` 门禁不可满足），改用可复核的派生标识：实现侧 `impl-<实现产物名>-<UTC 时间戳>`、评审侧 `review-<评审产物名>-<UTC 时间戳>`，两侧不得相同，两个产物文件都必须列入该任务 `evidence/`；主控抽查时核对标识中的产物名和时刻与文件一致。派生标识只作无 ID 宿主的兜底，能拿到真实会话 ID 时必须用真实 ID，不能为省事批量生成。
+
+`progress.md` 追加记录 task ID、时间、提交/会话标识、验证结果、实际差异与下一步。用户未授权 Git 提交或发布时，记录工作区状态和差异即可，不自行提交或推送。临时输出遵守用户/项目运行目录（`WISH_DEV_RUNTIME_ROOT` 或用户指定目录，不写进项目或全局缓存）。
 
 ## 下一动作及旧版衔接
 
@@ -89,7 +105,7 @@ prd.json 只承载 task 级字段（status/attempts/evidence/review 等），不
   },
   "budget": {"max_fix_attempts": 3},
   "stories": [{
-    "id": "WP-01", "title": "实现顺序处理", "status": "pending", "attempts": 0,
+    "id": "T-1-01", "title": "实现顺序处理", "status": "pending", "attempts": 0,
     "allowed_files": ["src/**", "test/**"], "accept_refs": ["AC-01"],
     "verify": [{"kind": "command", "run": "node --test"}]
   }]

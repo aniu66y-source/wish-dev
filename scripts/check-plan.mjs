@@ -8,7 +8,7 @@ export function validatePlan(plan) {
   const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
   const text=v=>typeof v==='string'&&v.trim().length>0;
   const criterionId=v=>typeof v==='string'&&/^AC-\d{2,}$/.test(v);
-  const storyId=v=>typeof v==='string'&&/^(?:S|WP)-\d{2,}$/.test(v);
+  const storyId=v=>typeof v==='string'&&/^(?:T-\d+-\d{2,}|(?:S|WP)-\d{2,})$/.test(v);
   const requireText=(v,p)=>{if(!text(v))errors.push(p+' must be a non-empty string');};
   if(!object(plan))return ['plan must be an object'];
   if(plan.version!==1)errors.push('version must be 1');
@@ -74,7 +74,7 @@ export function validatePlan(plan) {
   stories.forEach((s,i)=>{
     const prefix=`stories[${i}]`;
     if(!object(s)){errors.push(prefix+' must be an object');return;}
-    if(!storyId(s.id))errors.push(prefix+'.id must be a string matching WP-01 or legacy S-01');
+    if(!storyId(s.id))errors.push(prefix+'.id must be a string matching T-2-01, or legacy WP-01/S-01');
     else{if(ids.has(s.id))errors.push('duplicate story id');ids.add(s.id);}
     requireText(s.title,prefix+'.title');
     if(!Array.isArray(s.allowed_files)||!s.allowed_files.length||s.allowed_files.some(v=>!text(v)))errors.push(prefix+'.allowed_files must declare the implementation scope');
@@ -91,7 +91,7 @@ export function validatePlan(plan) {
     });
     if(s.status==='done'&&(!Array.isArray(s.evidence)||!s.evidence.length))errors.push(prefix+'.evidence is required for done');
     if(s.status==='done'){
-      const idsOf=(source,...keys)=>keys.map(key=>source?.[key]).filter(text);
+      const idsOf=(source,...keys)=>keys.map(key=>source?.[key]).filter(text).map(id=>id.trim().toLowerCase());
       const implementations=idsOf(s,'context_id','sessionId');
       const reviewers=idsOf(s.review,'context_id','sessionId');
       const separate=implementations.length>0&&reviewers.length>0&&reviewers.every(id=>!implementations.includes(id));
@@ -140,14 +140,74 @@ export function nextActions(plan) {
   return [{action:'resolve_blockers',task_ids:tasks.filter(s=>s.status==='blocked').map(s=>s.id)}];
 }
 
+// Minimal ledger header at the top of progress.md: a touched-but-empty file, or a
+// header appended far down the log, cannot satisfy the gate. Keys accept the English
+// form and the documented Chinese alias, plain / emphasised (`**key**:`) / table row.
+const LEDGER_FIELDS=[
+  ['wish-id',/^(?:wish[-_ ]?id|愿望\s*id)\s*[:：]\s*\S/i],
+  ['acceptance',/^(?:acceptance|ac\s*清单)\s*[:：]\s*\S/i],
+  ['current-package',/^(?:current[-_ ]?package|当前包)\s*[:：]\s*\S/i],
+  ['next-action',/^(?:next[-_ ]?action|下一步|下一个?动作)\s*[:：]\s*\S/i],
+  ['blocker',/^(?:blocker|阻塞项?)\s*[:：]\s*\S/i]
+];
+const LEDGER_HEADER_LINES=40;
+
+function ledgerLine(line){
+  let value=line.trim();
+  value=value.replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^[-*+]\s+/,'');
+  value=value.replace(/^(\*\*|__|`)(.+?)\1\s*([:：])/,'$2$3');
+  if(value.startsWith('|')){
+    const cells=value.split('|').map(cell=>cell.trim());
+    if(cells.length>=4)value=cells[1]+': '+cells[2];
+  }
+  return value;
+}
+
+function ledgerStatus(file){
+  if(!fs.existsSync(file))return {ok:false,errors:['ledger missing: progress.md must sit next to prd.json before the first package fires (not_started)']};
+  let text;
+  try{text=fs.readFileSync(file,'utf8').replace(/^\uFEFF/,'');}
+  catch{return {ok:false,errors:['ledger unreadable: '+file]};}
+  const header=text.split(/\r?\n/).slice(0,LEDGER_HEADER_LINES).map(ledgerLine);
+  const missing=LEDGER_FIELDS.filter(([,pattern])=>!header.some(line=>pattern.test(line))).map(([name])=>name);
+  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs the 5-field header within the first ${LEDGER_HEADER_LINES} lines)`]:[]};
+}
+
+function planFailure(message,kind){
+  return Object.assign(new Error(message),{kind});
+}
+
+function runCli(argv){
+  if(argv.length!==3)throw planFailure('usage: node check-plan.mjs <prd.json>','usage');
+  const planPath=argv[2];
+  let stat;
+  try{stat=fs.statSync(planPath);}catch{throw planFailure('Plan file not found: '+planPath,'missing');}
+  if(!stat.isFile())throw planFailure('Plan path is not a readable file: '+planPath,'unreadable');
+  let raw;
+  try{raw=fs.readFileSync(planPath,'utf8');}
+  catch{throw planFailure('Plan file is not readable: '+planPath,'unreadable');}
+  let plan;
+  try{plan=JSON.parse(raw.replace(/^\uFEFF/,''));}
+  catch{throw planFailure('Plan is not valid JSON: '+planPath,'invalid');}
+  const ledgerPath=path.join(path.dirname(planPath),'progress.md');
+  const ledger=ledgerStatus(ledgerPath);
+  const errors=validatePlan(plan);
+  // Structure errors take priority: they name the first thing to fix and do not
+  // misreport the ledger as the blocker.
+  if(!errors.length)errors.push(...ledger.errors);
+  return {plan,errors,ledger:ledger.ok,ledger_path:ledgerPath};
+}
+
+const USAGE='usage: node check-plan.mjs <prd.json>';
+
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+  const fail=message=>console.log(JSON.stringify({ok:false,errors:[message],ledger:false,ledger_path:null,next_actions:[]},null,2));
   try{
-    if(process.argv.length!==3)throw new Error('usage: node check-plan.mjs <prd.json>');
-    const plan=JSON.parse(fs.readFileSync(process.argv[2],'utf8').replace(/^\uFEFF/,''));
-    const ledgerPath=path.join(path.dirname(process.argv[2]),'progress.md');
-    const ledgerOk=fs.existsSync(ledgerPath);
-    const errors=validatePlan(plan);
-    if(!errors.length&&!ledgerOk)errors.push('ledger missing: progress.md must sit next to prd.json before the first package fires (not_started)');
-    console.log(JSON.stringify({ok:!errors.length,errors,ledger:ledgerOk,ledger_path:ledgerPath,next_actions:errors.length?[]:nextActions(plan)},null,2));process.exitCode=errors.length?2:0;
-  }catch{console.log(JSON.stringify({ok:false,errors:['Plan is unreadable, invalid JSON, or no plan path supplied.'],ledger:false,ledger_path:null,next_actions:[]}));process.exitCode=2;}
+    const result=runCli(process.argv);
+    console.log(JSON.stringify({ok:!result.errors.length,errors:result.errors,ledger:result.ledger,ledger_path:result.ledger_path,next_actions:result.errors.length?[]:nextActions(result.plan)},null,2));
+    process.exitCode=result.errors.length?2:0;
+  }catch(error){
+    fail(['missing','invalid','unreadable'].includes(error?.kind)?error.message:USAGE);
+    process.exitCode=2;
+  }
 }
