@@ -3,7 +3,7 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录，仓库**不存在 v2.1.1** 的提交或 tag（版本号历史跳过该号）。
 
-## 2.2.0 — 2026-11-09（未发布）
+## 2.2.0 — 2026-11-09
 
 全面审查整改（流程 + 文档 + 脚本），门禁行为变更：
 

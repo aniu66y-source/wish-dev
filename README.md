@@ -21,7 +21,7 @@
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 版本号序列为 2.0.0 → 2.1.0 → 2.1.2 → 2.2.0；仓库不存在 `v2.1.1` 提交或 tag
-- 2.2.0 目前只有本地 tag（未推送、未发 Release）；对外可安装版本仍为 2.1.2
+- 2.2.0 已发布（2026-11-09）；Release 附 zip/manifest/sha256 三件套
 
 ---
 
@@ -43,7 +43,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前最新为 2.1.2；2.2.0 未发布），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前最新为 2.2.0），按宿主规则导入 |
 | 目录复制 | 把完整 `wish-dev/` 目录复制到宿主 skills 目录（不能只拷 SKILL.md） |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
