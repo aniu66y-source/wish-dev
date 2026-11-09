@@ -61,7 +61,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 ## 下一动作及旧版衔接
 
-检查器输出 next_actions：observe（观察原任务）、review（独立评审）、execute（就绪包候选）、final_acceptance（执行整体验收）、resolve_blockers（调查剩余阻塞）。脚本不执行任务、不改账本、不授予权限或判定交工；候选不代表全部同时派发，仍须核对实际资源、文件归属和未知写入。非零返回空列表。按 [continuation.md](continuation.md) 直接执行下一动作，不等用户继续。
+检查器输出 next_actions：observe（观察原任务）、review（独立评审）、execute（就绪包候选）、final_acceptance（执行整体验收）、resolve_blockers（调查剩余阻塞，含已达修复预算的 `pending`：须标 `blocked` 或提高预算）。脚本不执行任务、不改账本、不授予权限或判定交工；候选不代表全部同时派发，仍须核对实际资源、文件归属和未知写入。非零返回空列表。按 [continuation.md](continuation.md) 直接执行下一动作，不等用户继续。
 
 旧版模板状态映射：ready → pending、review → verifying、integrated → done；迁移须逐包核实真实进度、原始 ID、实际证据及评审，保留历史映射，不批量改名后当成通过。旧 done 无当前证据则回到 verifying/pending。既有 schema 1 计划与 S-ID 继续可用，不重建任务。
 

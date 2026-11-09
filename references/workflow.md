@@ -21,7 +21,7 @@ attempts / no-progress-count / root-cause / same-cause-failures / resume-conditi
 last-change / concrete-next-action / blocker / handover-status
 ~~~
 
-包状态：pending / running / verifying / done / blocked，机器契约见 [plan-contract.md](plan-contract.md)。pending 只有依赖 done 才可领取，verifying 表示实现已返回、待验收；不要同时维护两套活跃状态。整体状态：active / needs-user / interrupted / ready-for-acceptance / delivered。`transport` 取值：`subagent`（前台子智能体）/ `background-subagent`（后台子智能体）/ `subtask`（宿主无 Agent 但支持隔离子任务的降级通道）；`team-teammate` 仅为历史兼容，本技能不使用。
+包状态：pending / running / verifying / done / blocked，机器契约见 [plan-contract.md](plan-contract.md)。pending 只有依赖 done 才可领取，verifying 表示实现已返回、待验收；不要同时维护两套活跃状态。整体状态：active / needs-user / interrupted / ready-for-acceptance / delivered。`transport` 记录**执行通道**：`subagent`（子智能体）/ `subtask`（宿主无子智能体、仅支持隔离子任务时的降级通道）；前台/后台属于**运行模式**（记在任务备注并关联 `running-task-ids`），不塞进本字段；`team-teammate` 仅为历史兼容，本技能不使用。
 
 阶段或包完成只更新该阶段/包；整体 delivered 由协调者对照完整交付目标决定。用户要求人工签收而尚未收到时，保持待签收，不能伪造确认；不需要签收的任务可以在证据完整后技术交工。CLI 返回码不决定整体状态。每轮返回后按 [continuation.md](continuation.md) 直接执行下一动作，不以进度汇报结束仍可执行的工作。
 
@@ -74,7 +74,7 @@ last-change / concrete-next-action / blocker / handover-status
 
 ## 子智能体任务下发契约（主对话 → 执行子智能体）
 
-主对话把任务下发给宿主可派生的子智能体（默认 `general-purpose` 或等价执行体），**逐线以独立子智能体派发，不用团队队友模式**（不组队、不让子智能体互发消息或共享团队任务列表、不在队友间转派；跨线协调只走主对话，见 SKILL.md 总纲「派发模式」）。下发块用下方 12 项，全部填实际内容或后端可读取的绝对路径，不传"帮我开发"或不可访问的聊天引用：
+主对话把任务下发给宿主可派生的子智能体（默认用通用执行型子智能体，常见类型名 `general-purpose`），**逐线以独立子智能体派发，不用团队队友模式**（不组队、不让子智能体互发消息或共享团队任务列表、不在队友间转派；跨线协调只走主对话，见 SKILL.md 总纲「派发模式」）。下发块用下方 12 项，全部填实际内容或后端可读取的绝对路径，不传"帮我开发"或不可访问的聊天引用：
 
 ~~~markdown
 # T-2-01：具体目标

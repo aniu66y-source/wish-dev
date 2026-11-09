@@ -207,7 +207,11 @@ function runCli(argv){
   if(argv.length!==3)throw planFailure(USAGE,'usage');
   const planPath=argv[2];
   let stat;
-  try{stat=fs.statSync(planPath);}catch{throw planFailure('Plan file not found: '+planPath,'missing');}
+  try{stat=fs.statSync(planPath);}
+  catch(error){
+    const absent=error?.code==='ENOENT';
+    throw planFailure((absent?'Plan file not found: ':'Plan file is not readable: ')+planPath,absent?'missing':'unreadable');
+  }
   if(!stat.isFile())throw planFailure('Plan path is not a readable file: '+planPath,'unreadable');
   let raw;
   try{raw=fs.readFileSync(planPath,'utf8');}
@@ -231,7 +235,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
     console.log(JSON.stringify({ok:!result.errors.length,errors:result.errors,ledger:result.ledger,ledger_path:result.ledger_path,next_actions:result.errors.length?[]:nextActions(result.plan)},null,2));
     process.exitCode=result.errors.length?2:0;
   }catch(error){
-    fail(['missing','invalid','unreadable'].includes(error?.kind)?error.message:USAGE);
+    const known=['usage','missing','invalid','unreadable'].includes(error?.kind);
+    fail(known?error.message:'Check failed: '+(error?.name||'Error')+': '+(error?.message||String(error)));
     process.exitCode=2;
   }
 }
