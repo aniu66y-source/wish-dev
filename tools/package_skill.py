@@ -18,9 +18,9 @@ TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
 # Contract anchors: the load-bearing rules a later edit must not silently drop.
 # Missing anchors are reported as WEAK, never as a non-zero exit.
 CONTRACT_ANCHORS = {
-    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs"),
+    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"TeamCreate"),
     "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
-                               r"下发块用下方 12 项"),
+                               r"下发块用下方 12 项", r"run_in_background"),
     "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id"),
 }
 
