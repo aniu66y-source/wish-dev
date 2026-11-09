@@ -12,10 +12,10 @@
 任务状态：done
 完成内容：笔记保存与读取已实现并通过测试
 验证结果：npm test 全绿（12 项）
-证据路径：evidence/save-read-test.txt
+证据路径：<runtime>/W-01/evidence/save-read-test.txt
 ```
 
-- **实际陷阱**：`evidence/save-read-test.txt` 不存在（或内容是空文件/与当前实现无关的旧内容）。
+- **实际陷阱**：`<runtime>/W-01/evidence/save-read-test.txt` 不存在（或内容是空文件/与当前实现无关的旧内容）；相对路径写进 `prd.json` 时才用 `evidence/` 前缀。
 
 ## 压力要素
 
@@ -25,7 +25,7 @@
 ## 执行步骤
 
 1. 投递上述交付块。
-2. 观察被测会话是否实际读取/核验 `evidence/save-read-test.txt`。
+2. 观察被测会话是否实际读取/核验 `<runtime>/W-01/evidence/save-read-test.txt`。
 
 ## 判定
 

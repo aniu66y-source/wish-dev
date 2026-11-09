@@ -6,10 +6,10 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 ## 账本落盘硬门禁（ledger gate）
 
-`check-plan.mjs` 在 `prd.json` 结构校验通过后，检查**同目录的 `progress.md`**：文件缺失则 `exit 2`、`ledger:false`、错误记 `ledger missing: … (not_started)`；文件存在但**5 字段表头未在开头 40 行内开始、或未在起始行之后 15 行内写全**（含空文件、表头被追加到日志末尾）同样 `exit 2`、`ledger:false`、错误记 `ledger field missing: <字段名[, 字段名…]>`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落或表头不全，不得派发首个子智能体任务。
+`check-plan.mjs` 在 `prd.json` 结构校验通过后，检查**同目录的 `progress.md`**：文件缺失则 `exit 2`、`ledger:false`、错误记 `ledger missing: … (not_started)`；文件存在但**5 字段表头不是一个连续块**（从开头 40 行内开始、15 行内写完，可含空行与表格分隔行；空文件、起点超窗或被正文打断即失效）同样 `exit 2`、`ledger:false`、错误记 `ledger field missing: <字段名[, 字段名…]>`。这是把「先落账本、再进产品实现」从软约定变硬门禁——账本未落或表头不成立，不得派发首个子智能体任务。
 
 - 位置：`progress.md` 与 `prd.json` 同目录（`wishes/<wish-id>/` 或项目既有账本位置），不写进 prd.json。
-- 最小 5 字段表头须**从文件开头 40 行内开始，并在起始行之后 15 行内齐备**（首次落盘即有，逐行 `key: value`，值非空；可用 `-`/`*`/`1.` 列表项、`##` 标题、`**key**:` 或 `**key:**` 加粗、表格行 `| key | value |`、表格内加粗键名）：
+- 最小 5 字段表头须是**一个连续块**：从文件开头 40 行内开始，并在起始行之后 15 行内齐备，块内可有空行与表格分隔行，被正文打断即失效（首次落盘即有，逐行 `key: value`，值非空；可用 `-`/`*`/`+`/`1.`/`1)` 列表项、`##` 标题、`**key**:` 或 `**key:**` 加粗、表格行 `| key | value |`、表格内加粗键名）：
 
 ~~~markdown
 # progress
@@ -20,10 +20,10 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - blocker: 无
 ~~~
 
-- 字段名支持中文别名：`wish-id`｜愿望 ID、`acceptance`｜AC 清单、`current-package`｜当前包、`next-action`｜下一步（下一个动作）、`blocker`｜阻塞（阻塞项）。表头之后按 [workflow.md](workflow.md) 与 [continuation.md](continuation.md) 追加记录。
+- 字段名支持中文别名与常见写法（连字符/下划线/空格可省略）：`wish-id`（亦接受 `wish_id`、`wish id`、`wishid`）｜愿望 ID、`acceptance`｜AC 清单、`current-package`（`currentpackage` 同）｜当前包、`next-action`（`nextaction` 同）｜下一步（下一动作/下一个动作）、`blocker`｜阻塞（阻塞项）。表头之后按 [workflow.md](workflow.md) 与 [continuation.md](continuation.md) 追加记录。
 - 门禁只强制这 5 行表头；其余记账字段（见 [workflow.md](workflow.md)）供人读与续做，不做机器校验。
-- 门禁**不校验**：表头 `wish-id` 与 `prd.json.wish_id` 是否一致、`done` 任务是否在 `progress.md` 有记录、`allowed_files` 是否被实际遵守。这些由主对话对照账本核查，门禁通过不代表账本内容真实。
-- `ledger` 标志语义务求「账本可用」：文件缺失、不可读或表头不全均为 `false`；表头齐全才 `true`。
+- 门禁**不校验**：表头 `wish-id` 与 `prd.json.wish_id` 是否一致、`done` 任务是否在 `progress.md` 有记录、`allowed_files` 是否被实际遵守、派生标识中的产物名与时间戳是否与文件一致。这些由主对话对照账本核查，门禁通过不代表账本内容真实。
+- `ledger` 标志语义务求「账本可用」：文件缺失、不可读或表头不成立均为 `false`；表头完整成块才 `true`。
 - 结构错误优先级高于账本：`prd.json` 结构未过时只报结构错误，不把缺字段当首要阻塞；结构修好后再暴露账本问题。
 - `validatePlan` 保持纯结构、不读文件系统；账本门禁只在 CLI 入口触发，不影响库式 import。
 
@@ -39,7 +39,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - `architecture.concurrency`：适用时 `{applicable:true, assumptions, controls, verification}`；不适用时 `{applicable:false, reason}`。
 - `architecture.load_balancing`：适用时 `{applicable:true, strategy, state, failure_handling, verification}`；不适用时 `{applicable:false, reason, scale_trigger}`。每个说明字段为有意义的非空字符串。
 - `budget`：正整数 `max_fix_attempts`，必填、建议 3、用户实际预算优先（缺省会过不了门禁报 `must be a positive integer`，无内置兜底）。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
-- `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "T-1-01"`（`T-<线>-<序号>`，与下发块「任务编号」、交付块、`depends_on` 用**同一字符串**，避免二次编号；旧 `WP-01`/`S-01` 仍接受但不再用于新计划）、`title`、`status`、`attempts`、非空 `allowed_files`、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。`depends_on` 若存在必须引用已知 task ID（同一套编号），不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
+- `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "T-1-01"`（`T-<线>-<序号>`，序号至少两位数字，与下发块「任务编号」、交付块、`depends_on` 用**同一字符串**，避免二次编号；旧 `WP-01`/`S-01` 仍接受但不再用于新计划）、`title`、`status`、`attempts`、非空 `allowed_files`、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。`depends_on` 若存在必须引用已知 task ID（同一套编号），不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
 
 ## 状态和验证
 
@@ -53,7 +53,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 `attempts` 统计已发起的修复尝试，不统计正常状态轮询。达到修复上限且仍未解决，或达到熔断条件时设 `blocked`，继续其他独立工作，不能靠归零继续。首次实现和轮询不计修复。任务数量超出预算时，缩小当前交付范围或取得扩大预算的授权，不静默丢弃需求。门禁拒绝 `pending`/`running` 且 `attempts` 已达 `budget.max_fix_attempts` 的状态：先标 `blocked` 或经授权提高预算，不能靠再派一次绕过。
 
-只有实际验收通过才设 `done`，并附非空 `evidence` 路径数组、实现 `context_id`，以及 `review: {"context_id":"实际独立评审上下文标识","spec":"pass","quality":"pass"}`。标识须能追溯真实会话/运行记录，实现和评审上下文不同，不能随意造两个字符串冒充独立评审。旧计划可沿用实现和 review.sessionId；`context_id` 与 `sessionId` 均参与比对——任一侧已有标识与另一侧重合即判非独立，不能用另一字段绕开。缺独立上下文则记录未评审，不伪造子智能体/会话 ID。只读提示词不代表系统隔离。路径均相对本轮愿望目录，位于 `evidence/`（前缀大小写不敏感，兼容 Windows），不含 `..`、盘符或绝对路径。文件真实存在、内容与当前实现一致、会话真实独立，需要主控另行核查；字段和一串路径不能替代证据。
+只有实际验收通过才设 `done`，并附非空 `evidence` 路径数组、实现标识，以及 `review: {"context_id":"实际独立评审上下文标识","spec":"pass","quality":"pass"}`。实现与评审标识用 `context_id`；旧计划可沿用 `sessionId`，两者等效但**两侧不得重合**；同侧同时填写不单独报错。标识须能追溯真实会话/运行记录，实现和评审上下文不同，不能随意造两个字符串冒充独立评审。`context_id` 与 `sessionId` 均参与比对——任一侧已有标识与另一侧重合即判非独立，不能用另一字段绕开。缺独立上下文则记录未评审，不伪造子智能体/会话 ID。只读提示词不代表系统隔离。路径均相对本轮愿望目录，位于 `evidence/`（前缀大小写不敏感，兼容 Windows），不含 `..`、盘符或绝对路径。文件真实存在、内容与当前实现一致、会话真实独立，需要主控另行核查；字段和一串路径不能替代证据。
 
 **宿主不返回可引用会话/任务 ID 时**（无 ID 则上面的 `done` 门禁不可满足），改用可复核的派生标识：实现侧 `impl-<实现产物名>-<UTC 时间戳>`、评审侧 `review-<评审产物名>-<UTC 时间戳>`，两侧不得相同，两个产物文件都必须列入该任务 `evidence/`；主控抽查时核对标识中的产物名和时刻与文件一致。派生标识只作无 ID 宿主的兜底，能拿到真实会话 ID 时必须用真实 ID，不能为省事批量生成。
 

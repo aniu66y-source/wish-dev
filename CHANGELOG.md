@@ -3,31 +3,18 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录，仓库**不存在 v2.1.1** 的提交或 tag（版本号历史跳过该号）。
 
-## 2.2.0 — 2026-11-09
+## 2.2.0 — 2026-11-09（未发布）
 
-全面审查整改（流程 + 文档），门禁行为变更：
+全面审查整改（流程 + 文档 + 脚本），门禁行为变更：
 
-- 账本门禁收紧：`progress.md` 的 5 字段表头须**从开头 40 行内开始、并在起始行后 15 行内齐备**（`wish-id`/`acceptance`/`current-package`/`next-action`/`blocker`；支持中文别名、`-`/`*`/`1.` 列表项、标题前缀、`**key**:`/`**key:**` 加粗与 `| key | value |` 表格行含加粗键名）；空文件、表头起点超窗、追加到日志末尾均不通过；缺项聚合为一条错误；`ledger` 标志语义改为"账本可用"。
-- 熔断闭环：`pending`/`running` 且 `attempts` 已达 `budget.max_fix_attempts` 时门禁直接报错，必须先标 `blocked` 或经授权提高预算（调度不再催派下一次）。
-- 证据路径：`evidence/` 前缀大小写不敏感（Windows 兼容）。
-- 维护脚本健壮性：`--check` 的 usage 文案单点定义；锚点正则写错时报「锚点正则无效」而不是抛栈，`main` 也兜住 `re.error`。
-- 门禁未校验项明示：表头 `wish-id` 与 `prd.json.wish_id` 是否一致、`done` 任务是否在 `progress.md` 有记录、`allowed_files` 是否被遵守，均需主对话对照账本核查。
-- **任务编号统一**：`T-<线>-<序号>` 为唯一编号，`stories[].id`、下发块任务编号、交付块与 `depends_on` 同串；`WP-01`/`S-01` 仅保留兼容，消除两套编号靠人工翻译的漂移点。
-- CLI 错误分类：用法错误、文件不存在、目录/不可读路径、JSON 非法分别报错，不再统一为"plan unreadable"。
-- 独立评审标识比对归一化大小写，`Impl-01` 与 `impl-01` 不再被当作不同上下文。
-- `SKILL.md` 主对话边界新增**领导层执行白名单**（门禁脚本、差异文件、能力探测、收尾清理），消除"绝不执行"与"必须跑门禁"的矛盾。
-- 裁剪规则与机器门禁对齐：阶段 1、2、12 恒做，3–11 可裁；阶段 2 不可裁但强度可降（复用调研/单候选 + 范围说明）。
-- 独立评审标识兜底：宿主不返回会话 ID 时使用可复核派生标识（产物名 + UTC 时间戳），产物须入 `evidence/`。
-- 运行根示例去掉具体盘符，统一 `WISH_DEV_RUNTIME_ROOT` 或用户指定目录（5 处）。
-- `package_skill.py` 质量门新增 `contracts` 维度（锚点改为行首正则，缺失即 WEAK，仍不阻断退出码）；再新增 `versions` 维度校验 SKILL/CHANGELOG/README 版本一致（6 维 → 7 维）。
-- 文档口径对齐：eval 触发阈值与 AGENTS 统一为"P0/交付契约措辞或大版本前"；README 错误分类补"目录/不可读"；显式区分交付块绝对路径与 `prd.json` 相对路径；SKILL 首段"默认不动手"与白名单对齐。
-- 派发契约明确子智能体类型与属性：前台派生、探索/规划型用于调研与设计、评审另派新实例、后台运行模式仅限长任务并有界取回、禁用团队设施；`transport` 记录执行通道（`subagent`/`subtask`），运行模式另记。工具名统一收进 `portability.md`「宿主能力映射」，并纠正“探索型=只读”的误述（其工具集可能含命令执行与消息能力，须在下发块禁写禁组队）。
-- 文档口径：README 熔断补“连续 3 次无进展”；SKILL“同批号”改为“同一条线”；README 结构树对齐并补 research/quality 行说明。
-- 调度与校验：`nextActions` 对已达修复预算的 `pending` 返回 `resolve_blockers`，不再催派下一次；`budget` 校验改为逐项可读判断；`version_drift` 只匹配 README“当前版本”行；质量门锚点改用能力词。
-- 收口修正：few-shot 与术语统一为“通用执行型子智能体”（去掉宿主调用式）；`next_actions`/`continuation` 补“达预算 pending”语义；`transport` 改为通道语义；质量门锚点收紧到含语境短语；eval SC-02 判据同步表头窗口；CLI 区分文件缺失与不可读，未知异常报 `Check failed` 而非用法错误。
-- `continuation.md` 的 4 类结束条件与 `SKILL.md` 同序。
-- 行为评估新增 SC-04（主对话越权执行）、SC-05（熔断后换壳重试）；**2.2.0 未运行 RED/GREEN 采样**，仅做结构、门禁与文档一致性验证（见 `tools/eval/README.md` 当前状态）。
-- 新增本文件；README 去重复的平台前提段、补 Windows 校验命令与临时文件落点。
+- **账本门禁**：`progress.md` 的 5 字段表头须为**连续块**（从开头 40 行内开始、15 行内写完；可含空行与表格分隔行，被正文打断或起点超窗即拒绝，空文件不通过）；`ledger` 表示「账本可用」；`evidence/` 前缀大小写不敏感；门禁未校验项（`wish-id` 一致性、`done` 记录、`allowed_files`、派生标识与产物一致）已在文档明示；39/40 行边界与「水平线不桥接」有对应测试。
+- **熔断与调度**：`pending`/`running` 且 `attempts` 已达 `budget.max_fix_attempts` 时门禁报错；`nextActions` 对该状态返回 `resolve_blockers` 而非 `execute`；`budget` 校验改为逐项可读判断。
+- **编号与评审**：`T-<线>-<序号>` 为唯一编号（`stories[].id`、下发块、交付块、`depends_on` 同串；`WP`/`S` 仅兼容，测试主夹具切到 `T-1-01`）；评审标识归一化大小写，无会话 ID 宿主用可复核派生标识（产物名 + UTC，产物须入 `evidence/`）；CLI 区分用法、缺失、不可读、JSON 非法，未知异常报 `Check failed`。
+- **主对话边界与派发**：白名单并入账本/证据落盘、门禁脚本、差异文件、能力探测、收尾清理；派发契约明确前台派生、探索/规划型用于调研与设计、评审另派新实例、后台运行模式仅限长任务、禁用团队设施；`transport` 记录执行通道（`subagent`/`subtask`），运行模式另记；宿主工具名集中到 `portability.md`「宿主能力映射」，并纠正「探索型=只读」的误述。
+- **质量门**：新增 `contracts`（13 个锚点，含 P0 保护规则）与 `versions`（SKILL/CHANGELOG/README 一致）两维（5 → 7）；`version_drift` 只匹配 README「当前版本」行；锚点正则非法时报可读错误而不抛栈；`license`/`compatibility` 改为行首锚定，防止缩回 `metadata` 仍判 PASS。
+- **打包与规范**：一次产出 zip/manifest/sha256，默认文件名带版本，产物固定 LF；`license`/`compatibility` 提到 frontmatter 顶层，license 值自足；校验阶段拒绝 CRLF 文本。
+- **文档与评估**：README/AGENTS/eval 的目录、窗口、错误分类、三件套与 `.py` 现状已对齐；新增 SC-04（越权执行）、SC-05（熔断换壳）；**2.2.0 未运行 RED/GREEN 采样（含本次整改后），不具备发布门槛**，仅完成结构校验、门禁测试、三件套实测与文档一致性验证；本版引入 `CHANGELOG.md`，本轮新增 `tools/test_package.py`（三件套自洽、字段位置回归）。
+- **工程化**：SKILL 瘦身（删除与 README/lifecycle 重复的 12 阶段表与边界对照表，186 → 167 行）；新增 GitHub Actions CI（`--check` + 两套测试）。
 
 ## 2.1.2 — 2026-11-09
 
@@ -47,7 +34,7 @@
 
 ## 1.3.5 — 2026-11-08
 
-- 主对话退为薄协调层，执行全下沉子智能体。
+- 主对话退为薄协调层，执行全下沉 OpenCode+OMO（2.0.0 已移除该通道）。
 
 ## 1.3.4 — 2026-11-08
 

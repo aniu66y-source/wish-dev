@@ -18,7 +18,9 @@ TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
 # Contract anchors: the load-bearing rules a later edit must not silently drop.
 # Missing anchors are reported as WEAK, never as a non-zero exit.
 CONTRACT_ANCHORS = {
-    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"禁止调用\*\*任何团队"),
+    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"禁止调用\*\*任何团队",
+                 r"^### 宿主每轮动作硬规则", r"^\*\*领导层执行白名单\*\*",
+                 r"每任务修复预算默认 3 次"),
     "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
                                r"下发块用下方 12 项", r"后台运行模式\*\*只用于"),
     "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id"),
@@ -80,7 +82,8 @@ def version_drift():
         issues.append("CHANGELOG.md 缺失")
     readme = ROOT / "README.md"
     if readme.is_file():
-        advertised = re.search(r"当前[^\n]*\*\*(\d+\.\d+\.\d+)\*\*", readme.read_text(encoding="utf-8"))
+        advertised = re.search(r"^-\s*当前版本[^\n]*\*\*(\d+\.\d+\.\d+)\*\*",
+                               readme.read_text(encoding="utf-8"), re.M)
         if not advertised:
             issues.append("README.md 未写出当前版本号")
         elif advertised[1] != version:
@@ -115,8 +118,8 @@ def skill_quality(manifest):
                        "detail": f"description is {desc_chars} chars; keep it scannable (<200)"})
     else:
         dims["conciseness"] = "PASS"
-    dims["crossPlatform"] = "PASS" if re.search(r"(?m)^\s*compatibility:", manifest) else "WEAK"
-    dims["license"] = "PASS" if re.search(r"(?m)^\s*license:", manifest) else "WEAK"
+    dims["crossPlatform"] = "PASS" if re.search(r"(?m)^compatibility:", manifest) else "WEAK"
+    dims["license"] = "PASS" if re.search(r"(?m)^license:", manifest) else "WEAK"
     gaps = contract_gaps()
     dims["contracts"] = "PASS" if not gaps else "WEAK"
     if gaps:
@@ -180,7 +183,10 @@ def validate(files):
         if not path.resolve().is_relative_to(ROOT.resolve()):
             raise ValueError("Resource leaves repository: " + str(path))
         if path.suffix in TEXT_SUFFIXES:
-            source = path.read_text(encoding="utf-8")
+            source = path.read_bytes()
+            if b"\r\n" in source:
+                raise ValueError("CRLF line endings in " + str(path) + "; convert to LF")
+            source = source.decode("utf-8")
             if "\ufffd" in source:
                 raise ValueError("Unicode replacement character in " + str(path))
             if path.suffix == ".py":
@@ -224,22 +230,39 @@ def package(files, metadata, output):
             member = metadata["name"] + "/" + path.relative_to(ROOT).as_posix()
             if archive.read(member) != path.read_bytes():
                 raise ValueError("ZIP member differs from source: " + member)
-    # Report only the file name: the manifest ships as a public release asset,
-    # so a resolved local path would leak the maintainer's machine layout.
-    return {"archive": output.name, "bytes": output.stat().st_size,
-            "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
+    # Emit the release triple next to the archive: zip + manifest.json + .sha256.
+    # Only file names are reported, so a manifest shipped as a public asset never
+    # leaks the maintainer's machine layout.
+    archive_name = output.name
+    sha256 = hashlib.sha256(output.read_bytes()).hexdigest()
+    checksum = output.with_name(archive_name + ".sha256")
+    checksum.write_text(f"{sha256}  {archive_name}\n", encoding="utf-8", newline="\n")
+    manifest = output.with_name(output.stem + ".manifest.json")
+    manifest.write_text(json.dumps({
+        "name": metadata["name"],
+        "version": metadata["version"],
+        "archive": archive_name,
+        "bytes": output.stat().st_size,
+        "sha256": sha256,
+        "files": [metadata["name"] + "/" + path.relative_to(ROOT).as_posix()
+                  for path in files],
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return {"archive": archive_name, "bytes": output.stat().st_size, "sha256": sha256,
+            "manifest": manifest.name, "checksum": checksum.name}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Validate without building")
-    parser.add_argument("--output", type=Path, default=ROOT / "packages/wish-dev.zip")
+    parser.add_argument("--output", type=Path, default=None,
+                        help="ZIP path; defaults to packages/wish-dev-<version>.zip")
     args = parser.parse_args()
     try:
         files = resources()
         result = validate(files)
         if not args.check:
-            result.update(package(files, result, args.output))
+            target = args.output or ROOT / "packages" / ("wish-dev-" + result["version"] + ".zip")
+            result.update(package(files, result, target))
         print(json.dumps(result, ensure_ascii=True, indent=2))
         return 0
     except (OSError, ValueError, SyntaxError, zipfile.BadZipFile, re.error) as error:

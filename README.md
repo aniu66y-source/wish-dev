@@ -20,7 +20,8 @@
 - 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.2.0**）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 版本号序列为 2.1.0 → 2.1.2 → 2.2.0；仓库不存在 `v2.1.1` 提交或 tag
+- 版本号序列为 2.0.0 → 2.1.0 → 2.1.2 → 2.2.0；仓库不存在 `v2.1.1` 提交或 tag
+- 2.2.0 目前只有本地 tag（未推送、未发 Release）；对外可安装版本仍为 2.1.2
 
 ---
 
@@ -42,7 +43,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`，按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前最新为 2.1.2；2.2.0 未发布），按宿主规则导入 |
 | 目录复制 | 把完整 `wish-dev/` 目录复制到宿主 skills 目录（不能只拷 SKILL.md） |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
@@ -67,7 +68,7 @@
 | 11 | 上线验收与运行观察 | 目标环境核心路径、有界首轮观察 |
 | 12 | 交工与维护交接 | 交付物、验收证据、维护说明 |
 
-**裁剪规则**：阶段 1、2、12 恒做；3–11 按交付物类型裁剪。阶段 2 不可裁但强度可降（复用已核实调研、只补一条实现链路并说明检索范围），因为 `prd.json` 的调研证据是机器硬门。详见 [阶段裁剪判定](references/lifecycle.md#阶段裁剪判定)。
+**裁剪规则**：阶段 1、2、12 恒做；3–11 按交付物类型裁剪。阶段 2 不可裁但强度可降（复用已核实调研、只补一条实现链路并说明检索范围）；检索范围说明不能替代候选证据，URL、40 位 SHA、`code_refs`、`fit`、`limits` 仍全部必填，因为 `prd.json` 的调研证据是机器硬门。详见 [阶段裁剪判定](references/lifecycle.md#阶段裁剪判定)。
 
 ---
 
@@ -75,13 +76,13 @@
 
 | 原则 | 说明 |
 |---|---|
-| **宿主子智能体执行** | 调查/实现/测试/部署/评审全部下发宿主子智能体；主对话只做规划/分派/验收，直接动手仅限白名单（门禁脚本、差异文件、能力探测、收尾清理）；前台派生为主，后台仅限长任务，不用团队队友 |
+| **宿主子智能体执行** | 调查/实现/测试/部署/评审全部下发宿主子智能体；主对话只做规划/分派/验收，直接动手仅限白名单（账本/证据落盘、门禁脚本、差异文件、能力探测、收尾清理）；前台派生为主，后台仅限长任务，不用团队队友 |
 | **多线并行 + 任务编号** | 规划时分离模块多线并行，每线 `T-<线>-<序号>`；账本 `stories[].id`、下发块、`depends_on` 同号，避免交接漂移；不写死包数与并行度 |
 | **修根因** | 先定位错误结构，不在错误结构上堆补丁/补偿分支/新旧竞争方案 |
 | **敏感凭据隔离** | 模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
-| **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须从开头 40 行内开始、15 行内写全）；`check-plan.mjs` 缺账本或表头不全即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
-| **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions），非侵入、只报告不阻断 |
+| **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须为连续块：开头 40 行内开始、15 行内写完）；`check-plan.mjs` 缺账本或表头不成立即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
+| **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions）；质量维度只报告不阻断，但 frontmatter、内部链接、JS 语法或 CRLF 行尾错误仍会 exit 1 |
 | **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
 
 ---
@@ -103,9 +104,11 @@ wish-dev/
 │   └── portability.md               安装、宿主能力与映射
 ├── scripts/                         运行时脚本
 │   └── check-plan.mjs               机器计划门禁（Node 18+，含账本门禁）
+├── .github/workflows/ci.yml         CI：--check + 两套测试
 ├── tools/                           维护工具（不随技能打包）
 │   ├── package_skill.py             结构校验 + 7 维质量报告 + 打包
 │   ├── test_plan.mjs                门禁测试（node --test）
+│   ├── test_package.py              打包工具测试（stdlib unittest）
 │   └── eval/                        技能行为压力评估场景（RED-GREEN）
 ├── CHANGELOG.md                     版本变更记录
 └── AGENTS.md                        仓库维护约定
@@ -120,25 +123,47 @@ wish-dev/
 ```bash
 # 校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 输出含 skill_quality（7 维质量报告：contracts 校验 P0 段与交付契约锚点，versions 校验 SKILL/CHANGELOG/README 版本一致）、internal_links 命中数，
+# 输出含 skill_quality（7 维质量报告：contracts 校验 3 个文件的契约锚点，含 P0 保护规则；versions 校验 SKILL/CHANGELOG/README 版本一致）、internal_links 命中数，
 # 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）
 
 # 机器计划门禁测试
 node --test tools/test_plan.mjs   # 含结构门禁与账本门禁正/负例，以输出计数为准
 
+# 打包工具测试（stdlib，无第三方依赖）
+python -B -m unittest discover -s tools -p "test_*.py"
+
+# 以上三条在 CI 中自动执行（.github/workflows/ci.yml）
+
 # 技能行为压力评估（大版本发布前；方法见 tools/eval/README.md；当前仓库尚无已存档结果）
 # RED：未注入技能的新会话跑场景记录基线违规；GREEN：注入当前版重跑对照
 
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
-# 缺失 → exit 2 + ledger:false + not_started；表头缺项/起点超出前 40 行/未在 15 行内写全 → exit 2 + ledger:false + 缺项名
+# 缺失 → exit 2 + ledger:false + not_started；表头不连续/起点超出前 40 行/未在 15 行内写完 → exit 2 + ledger:false + 缺项名
 # 齐全 → exit 0 + ledger:true；用法错误 / 文件不存在 / 目录或不可读 / JSON 非法分别给出不同错误
 node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"
 
-# 生成发布包（不入 git，仅本地派生物）
-python -B tools/package_skill.py --output packages/wish-dev-<ver>.zip
+# 生成发布包（不入 git，仅本地派生物；默认 packages/wish-dev-<ver>.zip）
+python -B tools/package_skill.py
 ```
 
-生成后**必须挂 GitHub Release**（`gh release create v<ver>` 带 `--target main` 挂三件套 zip/manifest/sha256）；git 树不保存任何 `packages/` 内容。
+脚本一次产出**三件套**：`wish-dev-<ver>.zip`、`wish-dev-<ver>.manifest.json`、`wish-dev-<ver>.zip.sha256`（不指定 `--output` 时默认放在 `packages/` 且带版本号）。
+
+发版顺序固定：**提交全部改动 → 重建 `v<ver>` tag → 推 main 与指定 tag → 创建 Release**；工作区有未提交改动、或 tag 落后于工作树时不得发版。
+
+```bash
+git add -A && git commit -m "release: v<ver>"
+git tag -fa v<ver> -m "wish-dev <ver>"
+git push origin main
+git ls-remote --tags origin v<ver>   # 已有同名 tag 时先确认覆盖策略
+git push origin refs/tags/v<ver>       # 被拒时确认覆盖：git push --force origin refs/tags/v<ver>
+gh release view v<ver> || true     # 可选核对：不存在则继续
+gh release create v<ver> --target main --notes-file <notes.md> \
+  packages/wish-dev-<ver>.zip \
+  packages/wish-dev-<ver>.manifest.json \
+  packages/wish-dev-<ver>.zip.sha256
+```
+
+git 树不保存任何 `packages/` 内容。
 
 结构校验或 CLI 诊断通过，**不代表**真实子智能体并行开发、部署和跨宿主运行已经验收。
 
@@ -147,7 +172,7 @@ python -B tools/package_skill.py --output packages/wish-dev-<ver>.zip
 ## 后续维护
 
 1. 拉最新代码，修改 `SKILL.md` 或 `references/` 相应文件；按需 bump `SKILL.md` 的 `version`。
-2. 文档变更跑结构校验；脚本（check-plan.mjs）行为变更还需跑 `node --test tools/test_plan.mjs` 并验证受影响行为。
+2. 文档变更跑结构校验；脚本行为变更再跑 `node --test tools/test_plan.mjs`（check-plan.mjs）与 `python -B -m unittest discover -s tools -p "test_*.py"`（package_skill.py），并验证受影响行为。
 3. 审查完整差异，确认不含密钥、日志、缓存或临时文件。
 4. 用户授权后提交并推送；大改动或多人协作走 PR 审查。
 5. 需要安装包时从已核对源码重新打包；发版挂 GitHub Release。

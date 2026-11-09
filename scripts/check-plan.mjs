@@ -163,6 +163,7 @@ const LEDGER_FIELDS=[
 ];
 const LEDGER_HEADER_START=40;
 const LEDGER_HEADER_SPAN=15;
+const TABLE_SEPARATOR=/^\|[\s:|-]+\|$/;
 
 function ledgerLine(line){
   let value=line.trim();
@@ -176,25 +177,31 @@ function ledgerLine(line){
   return value;
 }
 
+function headerLine(value,raw){
+  return value===''||LEDGER_FIELDS.some(([,pattern])=>pattern.test(value))||TABLE_SEPARATOR.test(raw.trim());
+}
+
 function ledgerStatus(file){
   if(!fs.existsSync(file))return {ok:false,errors:['ledger missing: progress.md must sit next to prd.json before the first package fires (not_started)']};
   let text;
   try{text=fs.readFileSync(file,'utf8').replace(/^\uFEFF/,'');}
   catch{return {ok:false,errors:['ledger unreadable: '+file]};}
   const lines=text.split(/\r?\n/);
-  // The header must start near the top and then be complete: a header pushed past
-  // the window is rejected, but a header that merely straddles the boundary is not
-  // truncated field by field.
+  // The header is one contiguous block near the top: blank lines and table separators
+  // may sit between fields, but a prose line ends the block. Fields scattered through
+  // the log do not satisfy it.
   const start=lines.findIndex(line=>LEDGER_FIELDS.some(([,pattern])=>pattern.test(ledgerLine(line))));
   const found=new Set();
   if(start>=0&&start<LEDGER_HEADER_START){
-    for(const line of lines.slice(start,start+LEDGER_HEADER_SPAN)){
-      const value=ledgerLine(line);
+    const end=Math.min(start+LEDGER_HEADER_SPAN,lines.length);
+    for(let i=start;i<end;i++){
+      const value=ledgerLine(lines[i]);
+      if(i>start&&!headerLine(value,lines[i]))break;
       for(const [name,pattern] of LEDGER_FIELDS)if(pattern.test(value))found.add(name);
     }
   }
   const missing=LEDGER_FIELDS.map(([name])=>name).filter(name=>!found.has(name));
-  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs the 5-field header to start within the first ${LEDGER_HEADER_START} lines and finish within ${LEDGER_HEADER_SPAN} lines)`]:[]};
+  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs one contiguous 5-field header starting within the first ${LEDGER_HEADER_START} lines and finishing within ${LEDGER_HEADER_SPAN} lines)`]:[]};
 }
 
 function planFailure(message,kind){
