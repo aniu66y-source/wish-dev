@@ -191,8 +191,10 @@ function planFailure(message,kind){
   return Object.assign(new Error(message),{kind});
 }
 
+const USAGE='usage: node check-plan.mjs <prd.json>';
+
 function runCli(argv){
-  if(argv.length!==3)throw planFailure('usage: node check-plan.mjs <prd.json>','usage');
+  if(argv.length!==3)throw planFailure(USAGE,'usage');
   const planPath=argv[2];
   let stat;
   try{stat=fs.statSync(planPath);}catch{throw planFailure('Plan file not found: '+planPath,'missing');}
@@ -211,8 +213,6 @@ function runCli(argv){
   if(!errors.length)errors.push(...ledger.errors);
   return {plan,errors,ledger:ledger.ok,ledger_path:ledgerPath};
 }
-
-const USAGE='usage: node check-plan.mjs <prd.json>';
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   const fail=message=>console.log(JSON.stringify({ok:false,errors:[message],ledger:false,ledger_path:null,next_actions:[]},null,2));

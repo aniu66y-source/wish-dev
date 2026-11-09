@@ -47,8 +47,14 @@ def contract_gaps():
     for name, anchors in CONTRACT_ANCHORS.items():
         path = ROOT / name
         source = path.read_text(encoding="utf-8") if path.is_file() else ""
-        gaps.extend(name + ' 缺少锚点「' + anchor + '」' for anchor in anchors
-                    if not re.search(anchor, source, re.M))
+        for anchor in anchors:
+            try:
+                present = re.search(anchor, source, re.M)
+            except re.error as error:
+                gaps.append(f"{name} 锚点正则无效「{anchor}」: {error}")
+                continue
+            if not present:
+                gaps.append(name + ' 缺少锚点「' + anchor + '」')
     return gaps
 
 
@@ -236,7 +242,7 @@ def main():
             result.update(package(files, result, args.output))
         print(json.dumps(result, ensure_ascii=True, indent=2))
         return 0
-    except (OSError, ValueError, SyntaxError, zipfile.BadZipFile) as error:
+    except (OSError, ValueError, SyntaxError, zipfile.BadZipFile, re.error) as error:
         print(str(error), file=sys.stderr)
         return 1
 

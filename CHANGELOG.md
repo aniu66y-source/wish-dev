@@ -10,6 +10,7 @@
 - 账本门禁收紧：`progress.md` 的 5 字段表头须**从开头 40 行内开始、并在起始行后 15 行内齐备**（`wish-id`/`acceptance`/`current-package`/`next-action`/`blocker`；支持中文别名、`-`/`*`/`1.` 列表项、标题前缀、`**key**:`/`**key:**` 加粗与 `| key | value |` 表格行含加粗键名）；空文件、表头起点超窗、追加到日志末尾均不通过；缺项聚合为一条错误；`ledger` 标志语义改为"账本可用"。
 - 熔断闭环：`pending`/`running` 且 `attempts` 已达 `budget.max_fix_attempts` 时门禁直接报错，必须先标 `blocked` 或经授权提高预算（调度不再催派下一次）。
 - 证据路径：`evidence/` 前缀大小写不敏感（Windows 兼容）。
+- 维护脚本健壮性：`--check` 的 usage 文案单点定义；锚点正则写错时报「锚点正则无效」而不是抛栈，`main` 也兜住 `re.error`。
 - 门禁未校验项明示：表头 `wish-id` 与 `prd.json.wish_id` 是否一致、`done` 任务是否在 `progress.md` 有记录、`allowed_files` 是否被遵守，均需主对话对照账本核查。
 - **任务编号统一**：`T-<线>-<序号>` 为唯一编号，`stories[].id`、下发块任务编号、交付块与 `depends_on` 同串；`WP-01`/`S-01` 仅保留兼容，消除两套编号靠人工翻译的漂移点。
 - CLI 错误分类：用法错误、文件不存在、目录/不可读路径、JSON 非法分别报错，不再统一为"plan unreadable"。
