@@ -80,6 +80,7 @@ export function validatePlan(plan) {
     if(!Array.isArray(s.allowed_files)||!s.allowed_files.length||s.allowed_files.some(v=>!text(v)))errors.push(prefix+'.allowed_files must declare the implementation scope');
     if(!states.has(s.status))errors.push(prefix+'.status is invalid');
     if(!Number.isSafeInteger(s.attempts)||s.attempts<0||s.attempts>budget.max_fix_attempts)errors.push(prefix+'.attempts exceeds retry budget or is invalid');
+    else if(s.attempts>=budget.max_fix_attempts&&(s.status==='pending'||s.status==='running'))errors.push(prefix+'.attempts has reached the repair budget; mark it blocked or raise budget.max_fix_attempts');
     if(!Array.isArray(s.accept_refs)||!s.accept_refs.length)errors.push(prefix+'.accept_refs must not be empty');
     else for(const id of s.accept_refs){if(!criterionId(id)||!criteria.has(id))errors.push(prefix+'.accept_refs contains an invalid or unknown criterion');else covered.add(id);}
     if(!Array.isArray(s.verify)||!s.verify.length)errors.push(prefix+'.verify must contain an executable or observable check');
@@ -99,7 +100,7 @@ export function validatePlan(plan) {
     }
     if(s.evidence!==undefined){
       if(!Array.isArray(s.evidence))errors.push(prefix+'.evidence must be an array');
-      else for(const file of s.evidence){const normalized=typeof file==='string'?file.replaceAll('\\','/') : '';if(!normalized.startsWith('evidence/')||normalized.split('/').some(x=>x==='..'||x==='')||normalized.includes(':'))errors.push(prefix+'.evidence must stay under evidence/');}
+      else for(const file of s.evidence){const normalized=typeof file==='string'?file.replaceAll('\\','/').toLowerCase() : '';if(!normalized.startsWith('evidence/')||normalized.split('/').some(x=>x==='..'||x==='')||normalized.includes(':'))errors.push(prefix+'.evidence must stay under evidence/');}
     }
   });
   const tasks=new Map(stories.filter(s=>object(s)&&storyId(s.id)).map(s=>[s.id,s]));
@@ -150,14 +151,16 @@ const LEDGER_FIELDS=[
   ['next-action',/^(?:next[-_ ]?action|下一步|下一个?动作)\s*[:：]\s*\S/i],
   ['blocker',/^(?:blocker|阻塞项?)\s*[:：]\s*\S/i]
 ];
-const LEDGER_HEADER_LINES=40;
+const LEDGER_HEADER_START=40;
+const LEDGER_HEADER_SPAN=15;
 
 function ledgerLine(line){
   let value=line.trim();
-  value=value.replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^[-*+]\s+/,'');
+  value=value.replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^(?:[-*+]|\d+[.)])\s+/,'');
+  value=value.replace(/^(\*\*|__|`)(.+?)([:：])\1/,'$2$3');
   value=value.replace(/^(\*\*|__|`)(.+?)\1\s*([:：])/,'$2$3');
   if(value.startsWith('|')){
-    const cells=value.split('|').map(cell=>cell.trim());
+    const cells=value.split('|').map(cell=>cell.trim().replace(/^(\*\*|__|`)(.+?)\1$/,'$2'));
     if(cells.length>=4)value=cells[1]+': '+cells[2];
   }
   return value;
@@ -168,9 +171,20 @@ function ledgerStatus(file){
   let text;
   try{text=fs.readFileSync(file,'utf8').replace(/^\uFEFF/,'');}
   catch{return {ok:false,errors:['ledger unreadable: '+file]};}
-  const header=text.split(/\r?\n/).slice(0,LEDGER_HEADER_LINES).map(ledgerLine);
-  const missing=LEDGER_FIELDS.filter(([,pattern])=>!header.some(line=>pattern.test(line))).map(([name])=>name);
-  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs the 5-field header within the first ${LEDGER_HEADER_LINES} lines)`]:[]};
+  const lines=text.split(/\r?\n/);
+  // The header must start near the top and then be complete: a header pushed past
+  // the window is rejected, but a header that merely straddles the boundary is not
+  // truncated field by field.
+  const start=lines.findIndex(line=>LEDGER_FIELDS.some(([,pattern])=>pattern.test(ledgerLine(line))));
+  const found=new Set();
+  if(start>=0&&start<LEDGER_HEADER_START){
+    for(const line of lines.slice(start,start+LEDGER_HEADER_SPAN)){
+      const value=ledgerLine(line);
+      for(const [name,pattern] of LEDGER_FIELDS)if(pattern.test(value))found.add(name);
+    }
+  }
+  const missing=LEDGER_FIELDS.map(([name])=>name).filter(name=>!found.has(name));
+  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs the 5-field header to start within the first ${LEDGER_HEADER_START} lines and finish within ${LEDGER_HEADER_SPAN} lines)`]:[]};
 }
 
 function planFailure(message,kind){

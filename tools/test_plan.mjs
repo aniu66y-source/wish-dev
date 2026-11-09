@@ -27,6 +27,11 @@ test('legacy S ids and distinct session ids remain readable',()=>{const p=done(f
 reject('explicit task budget still limits scope',p=>{p.budget.max_tasks=1;p.stories.push({...p.stories[0],id:'WP-02'});});
 reject('invalid task budget is rejected',p=>p.budget.max_tasks=0);
 reject('repair budget cannot be exceeded',p=>p.stories[0].attempts=4);
+reject('a pending package at the repair limit must be blocked or the budget raised',p=>p.stories[0].attempts=3);
+test('verifying and blocked packages may sit at the repair limit',()=>{
+  for(const status of ['verifying','blocked']){const p=fixture();p.stories[0].status=status;p.stories[0].attempts=3;assert.deepEqual(validatePlan(p),[],status);}
+});
+test('evidence prefix is case-insensitive for Windows paths',()=>{const p=done(fixture());p.stories[0].evidence=['Evidence/save.json'];assert.deepEqual(validatePlan(p),[]);});
 reject('duplicate acceptance id',p=>p.acceptance.push({...p.acceptance[0]}));
 reject('uncovered acceptance',p=>p.acceptance.push({id:'AC-02',text:'导出'}));
 test('uncovered criterion error names the id',()=>{const p=fixture();p.acceptance.push({id:'AC-02',text:'导出'});assert.ok(validatePlan(p).some(e=>e==='uncovered acceptance criterion: AC-02'));});
@@ -76,15 +81,23 @@ const ledgerChinese=()=>[
   '- 阻塞项：无'
 ].join('\n')+'\n';
 
+const table=({bold}={})=>['| 字段 | 值 |','|---|---|',...['wish-id: W-01','acceptance: AC-01 保存后刷新可读取','current-package: T-1-01','next-action: 派发 T-1-01','blocker: 无']
+  .map(row=>{const [key,...rest]=row.split(': ');const cell=bold?`**${key}**`:key;return `| ${cell} | ${rest.join(': ')} |`;})].join('\n')+'\n';
+const pad=n=>Array.from({length:n},(_,i)=>`备注${i+1}: 无`).join('\n')+'\n';
+
 const ledgers={
   full:()=>ledgerHeader(),
   partial:()=>ledgerHeader({blocker:false}),
   empty:()=>'',
   zh:()=>ledgerChinese(),
-  late:()=>Array.from({length:60},(_,i)=>`备注${i+1}: 无`).join('\n')+'\n'+ledgerHeader(),
+  late:()=>pad(60)+ledgerHeader(),
   bold:()=>ledgerHeader().replace(/^- ([\w-]+)/gm,(line,key)=>`- **${key}**`),
-  table:()=>['| 字段 | 值 |','|---|---|',...['wish-id: W-01','acceptance: AC-01 保存后刷新可读取','current-package: WP-01','next-action: 派发 WP-01','blocker: 无']
-    .map(row=>{const [key,...rest]=row.split(': ');return `| ${key} | ${rest.join(': ')} |`;})].join('\n')+'\n'
+  boldColon:()=>ledgerHeader().replace(/^- ([\w-]+)\s*:/gm,(line,key)=>`- **${key}:**`),
+  ordered:()=>ledgerHeader().replace(/^- (.*)$/gm,(line,body)=>body).split('\n').map((line,i)=>line?`${i+1}. ${line}`:line).join('\n'),
+  table:()=>table(),
+  tableBold:()=>table({bold:true}),
+  straddle:()=>pad(38)+ledgerHeader(),
+  pastWindow:()=>pad(39)+ledgerHeader()
 };
 
 function cli(source, check, {ledger='full'}={}){
@@ -147,11 +160,25 @@ test('documented Chinese ledger aliases and heading forms pass the gate',()=>{
   },{ledger:'zh'});
 });
 test('emphasised and table header forms pass the gate',()=>{
-  for(const ledger of ['bold','table'])cli(JSON.stringify(fixture()),result=>{
+  for(const ledger of ['bold','boldColon','ordered','table','tableBold'])cli(JSON.stringify(fixture()),result=>{
     const data=JSON.parse(result.stdout);
     assert.equal(data.ok,true,ledger);
     assert.equal(data.ledger,true,ledger);
   },{ledger});
+});
+test('a header straddling the 40-line boundary stays complete',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ok,true);
+    assert.equal(data.ledger,true);
+  },{ledger:'straddle'});
+});
+test('a header starting past the 40-line boundary is rejected',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,false);
+    assert.ok(data.errors[0].includes('start within the first 40 lines'));
+  },{ledger:'pastWindow'});
 });
 test('a header appended far down the log is rejected',()=>{
   cli(JSON.stringify(fixture()),result=>{

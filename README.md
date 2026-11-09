@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（本轮维护后为 **2.2.0**）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.2.0**）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 版本号序列为 2.1.0 → 2.1.2 → 2.2.0；仓库不存在 `v2.1.1` 提交或 tag
@@ -80,8 +80,8 @@
 | **修根因** | 先定位错误结构，不在错误结构上堆补丁/补偿分支/新旧竞争方案 |
 | **敏感凭据隔离** | 模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
-| **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（开头 40 行内含 5 字段表头）；`check-plan.mjs` 缺账本或表头不全即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
-| **SKILL 质量门** | `package_skill.py --check` 输出 6 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts），非侵入、只报告不阻断 |
+| **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须从开头 40 行内开始、15 行内写全）；`check-plan.mjs` 缺账本或表头不全即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
+| **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions），非侵入、只报告不阻断 |
 | **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
 
 ---
@@ -104,7 +104,7 @@ wish-dev/
 ├── scripts/                 运行时脚本
 │   └── check-plan.mjs       机器计划门禁（Node 18+，含账本门禁）
 ├── tools/                   维护工具（不随技能打包）
-│   ├── package_skill.py     结构校验 + 6 维质量报告 + 打包
+│   ├── package_skill.py     结构校验 + 7 维质量报告 + 打包
 │   ├── test_plan.mjs        门禁测试（node --test）
 │   └── eval/                技能行为压力评估场景（RED-GREEN）
 ├── CHANGELOG.md             版本变更记录
@@ -120,7 +120,7 @@ wish-dev/
 ```bash
 # 校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 输出含 skill_quality（6 维质量报告，contracts 校验 P0 段与交付契约锚点）、internal_links 命中数，
+# 输出含 skill_quality（7 维质量报告：contracts 校验 P0 段与交付契约锚点，versions 校验 SKILL/CHANGELOG/README 版本一致）、internal_links 命中数，
 # 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）
 
 # 机器计划门禁测试
@@ -130,8 +130,8 @@ node --test tools/test_plan.mjs   # 含结构门禁与账本门禁正/负例，�
 # RED：未注入技能的新会话跑场景记录基线违规；GREEN：注入当前版重跑对照
 
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
-# 缺失 → exit 2 + ledger:false + not_started；表头缺项/超出前 40 行 → exit 2 + ledger:false + 缺项名
-# 齐全 → exit 0 + ledger:true；用法错误 / 文件不存在 / JSON 非法分别给出不同错误
+# 缺失 → exit 2 + ledger:false + not_started；表头缺项/起点超出前 40 行/未在 15 行内写全 → exit 2 + ledger:false + 缺项名
+# 齐全 → exit 0 + ledger:true；用法错误 / 文件不存在 / 目录或不可读 / JSON 非法分别给出不同错误
 node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"
 
 # 生成发布包（不入 git，仅本地派生物）

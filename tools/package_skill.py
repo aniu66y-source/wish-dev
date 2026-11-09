@@ -52,9 +52,39 @@ def contract_gaps():
     return gaps
 
 
+def version_drift():
+    """SKILL.md / CHANGELOG.md / README.md must advertise the same version.
+
+    Drift is reported as WEAK, never as a non-zero exit: the gate exists to flag
+    the mismatch, and a missing changelog line should not break local checks."""
+    issues = []
+    manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    match = re.search(r'^  version:\s*"(\d+\.\d+\.\d+)"\s*$', manifest, re.M)
+    if not match:
+        return ["SKILL.md version missing"]
+    version = match[1]
+    changelog = ROOT / "CHANGELOG.md"
+    if changelog.is_file():
+        heading = re.search(r"^## (\d+\.\d+\.\d+)", changelog.read_text(encoding="utf-8"), re.M)
+        if not heading:
+            issues.append("CHANGELOG.md 缺少 `## x.y.z` 版本标题")
+        elif heading[1] != version:
+            issues.append(f"CHANGELOG.md 顶部为 {heading[1]}，SKILL.md 为 {version}")
+    else:
+        issues.append("CHANGELOG.md 缺失")
+    readme = ROOT / "README.md"
+    if readme.is_file():
+        advertised = re.search(r"\*\*(\d+\.\d+\.\d+)\*\*", readme.read_text(encoding="utf-8"))
+        if not advertised:
+            issues.append("README.md 未写出当前版本号")
+        elif advertised[1] != version:
+            issues.append(f"README.md 写作 {advertised[1]}，SKILL.md 为 {version}")
+    return issues
+
+
 def skill_quality(manifest):
     """Lightweight, non-blocking quality read (completeness/examples/conciseness/
-    crossPlatform/license/contracts). Mirrors a _scores.json style report
+    crossPlatform/license/contracts/versions). Mirrors a _scores.json style report
     without the A/B impact harness: it only reports, never gates the exit code."""
     lines = manifest.count("\n") + 1
     examples = len(re.findall(r"(?m)^[~`]{3,}", manifest)) // 2
@@ -86,10 +116,16 @@ def skill_quality(manifest):
     if gaps:
         issues.append({"severity": "HIGH", "category": "contracts",
                        "detail": "; ".join(gaps)})
+    drift = version_drift()
+    dims["versions"] = "PASS" if not drift else "WEAK"
+    if drift:
+        issues.append({"severity": "MEDIUM", "category": "versions",
+                       "detail": "; ".join(drift)})
     weak = [k for k, v in dims.items() if v == "WEAK"]
     verdict = "PASS" if not weak else f"{len(weak)} WEAK dimension(s)"
     return {"lines": lines, "example_blocks": examples, "description_chars": desc_chars,
-            "dimensions": dims, "contract_gaps": gaps, "verdict": verdict, "issues": issues}
+            "dimensions": dims, "contract_gaps": gaps, "version_drift": drift,
+            "verdict": verdict, "issues": issues}
 
 
 def js_syntax(path):

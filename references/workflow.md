@@ -4,7 +4,7 @@
 
 每轮临时资源使用独立 <runtime>/<project-slug>/<task-id>/<run-id>/；<runtime> 由 `WISH_DEV_RUNTIME_ROOT`、显式参数或用户指定目录决定，不写进项目或全局缓存。正式账本和有效证据保存在 wishes/<wish-id>/ 或项目既有位置；运行目录只存临时日志和工作副本，不作为唯一验收依据。结束前将必要脱敏结果归档并修正引用。优先更新已有记录，避免多套真相来源。
 
-**账本落盘硬门禁**：派发首个子智能体任务前，`wishes/<wish-id>/` 下须同时存在 `prd.json` 与开头 40 行内含 5 字段表头的 `progress.md`；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`，表头字段不全同样拒绝（见 [plan-contract.md](plan-contract.md) 账本门禁节）。账本未落不进入产品实现。
+**账本落盘硬门禁**：派发首个子智能体任务前，`wishes/<wish-id>/` 下须同时存在 `prd.json` 与含 5 字段表头的 `progress.md`（表头须从开头 40 行内开始、15 行内写全）；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`，表头字段不全同样拒绝（见 [plan-contract.md](plan-contract.md) 账本门禁节）。账本未落不进入产品实现。
 
 记账字段（主对话维护，非机器门禁；门禁只强制 5 字段表头，见 [plan-contract.md](plan-contract.md)）：
 
@@ -125,6 +125,7 @@ last-change / concrete-next-action / blocker / handover-status
 - **`partial` 的账本映射**：账本状态仍是上方五态之一，不新增机器状态——仍有未完成工作则保持 `running`/`verifying`，需重领实现则回 `pending`；未完成事项与原因记入 `progress.md`，主对话核对应记哪态后更新。
 - `done` 须附非空证据路径 + 独立评审（另一子智能体）的 spec/quality 通过；只读提示词不等于系统隔离。
 - **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + 差异文件——有 Git 时在派发实现前记录 BASE commit，评审前用 `git diff <BASE>..HEAD > <runtime>/diff-T-x-y.md` 生成（多提交任务不得只看 HEAD~1）；无 Git 时用文件指纹清单。差异同样落文件不贴正文；无差异凭据不派评审，评审者不空评。
+- **证据路径两套写法**：交付块里写**绝对路径**方便主对话抽查；写进 `prd.json` 的 `evidence` 必须是愿望目录下的**相对路径**（`evidence/…`），两者不要混用。
 - 主对话读交付块后**抽查证据文件**再更新账本；子智能体回报不自动等于事实。
 - 下发单个任务时仅回传该任务状态及证据，不让子智能体自行判定整体交工。
 

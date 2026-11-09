@@ -7,7 +7,9 @@
 
 全面审查整改（流程 + 文档），门禁行为变更：
 
-- 账本门禁收紧：`progress.md` 须在**开头 40 行内**含 5 字段表头（`wish-id`/`acceptance`/`current-package`/`next-action`/`blocker`；支持中文别名、列表/标题前缀、`**key**:` 加粗与 `| key | value |` 表格行）；空文件、表头超窗、追加到日志末尾均不通过；缺项聚合为一条错误；`ledger` 标志语义改为"账本可用"。
+- 账本门禁收紧：`progress.md` 的 5 字段表头须**从开头 40 行内开始、并在起始行后 15 行内齐备**（`wish-id`/`acceptance`/`current-package`/`next-action`/`blocker`；支持中文别名、`-`/`*`/`1.` 列表项、标题前缀、`**key**:`/`**key:**` 加粗与 `| key | value |` 表格行含加粗键名）；空文件、表头起点超窗、追加到日志末尾均不通过；缺项聚合为一条错误；`ledger` 标志语义改为"账本可用"。
+- 熔断闭环：`pending`/`running` 且 `attempts` 已达 `budget.max_fix_attempts` 时门禁直接报错，必须先标 `blocked` 或经授权提高预算（调度不再催派下一次）。
+- 证据路径：`evidence/` 前缀大小写不敏感（Windows 兼容）。
 - 门禁未校验项明示：表头 `wish-id` 与 `prd.json.wish_id` 是否一致、`done` 任务是否在 `progress.md` 有记录、`allowed_files` 是否被遵守，均需主对话对照账本核查。
 - **任务编号统一**：`T-<线>-<序号>` 为唯一编号，`stories[].id`、下发块任务编号、交付块与 `depends_on` 同串；`WP-01`/`S-01` 仅保留兼容，消除两套编号靠人工翻译的漂移点。
 - CLI 错误分类：用法错误、文件不存在、目录/不可读路径、JSON 非法分别报错，不再统一为"plan unreadable"。
@@ -16,7 +18,8 @@
 - 裁剪规则与机器门禁对齐：阶段 1、2、12 恒做，3–11 可裁；阶段 2 不可裁但强度可降（复用调研/单候选 + 范围说明）。
 - 独立评审标识兜底：宿主不返回会话 ID 时使用可复核派生标识（产物名 + UTC 时间戳），产物须入 `evidence/`。
 - 运行根示例去掉具体盘符，统一 `WISH_DEV_RUNTIME_ROOT` 或用户指定目录（5 处）。
-- `package_skill.py` 质量门新增 `contracts` 维度（锚点改为行首正则，缺失即 WEAK，仍不阻断退出码）。
+- `package_skill.py` 质量门新增 `contracts` 维度（锚点改为行首正则，缺失即 WEAK，仍不阻断退出码）；再新增 `versions` 维度校验 SKILL/CHANGELOG/README 版本一致（6 维 → 7 维）。
+- 文档口径对齐：eval 触发阈值与 AGENTS 统一为"P0/交付契约措辞或大版本前"；README 错误分类补"目录/不可读"；显式区分交付块绝对路径与 `prd.json` 相对路径；SKILL 首段"默认不动手"与白名单对齐。
 - `continuation.md` 的 4 类结束条件与 `SKILL.md` 同序。
 - 行为评估新增 SC-04（主对话越权执行）、SC-05（熔断后换壳重试）；**2.2.0 未运行 RED/GREEN 采样**，仅做结构、门禁与文档一致性验证（见 `tools/eval/README.md` 当前状态）。
 - 新增本文件；README 去重复的平台前提段、补 Windows 校验命令与临时文件落点。
