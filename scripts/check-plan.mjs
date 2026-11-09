@@ -65,7 +65,9 @@ export function validatePlan(plan) {
     }
   }
   const budget=object(plan.budget)?plan.budget:{};
-  for(const key of ['max_fix_attempts','max_tasks'])if((key==='max_fix_attempts'||budget[key]!==undefined)&&(!Number.isSafeInteger(budget[key])||budget[key]<1))errors.push('budget.'+key+' must be a positive integer');
+  const isPositive=v=>Number.isSafeInteger(v)&&v>=1;
+  if(!isPositive(budget.max_fix_attempts))errors.push('budget.max_fix_attempts must be a positive integer');
+  if(budget.max_tasks!==undefined&&!isPositive(budget.max_tasks))errors.push('budget.max_tasks must be a positive integer');
   const stories=Array.isArray(plan.stories)?plan.stories:[];
   if(!stories.length)errors.push('stories must not be empty');
   if(budget.max_tasks!==undefined&&stories.length>budget.max_tasks)errors.push('stories exceed budget.max_tasks');
@@ -129,16 +131,24 @@ export function validatePlan(plan) {
 // A scheduling hint, not an executor or a permission grant. Validate the plan first.
 export function nextActions(plan) {
   const tasks=plan.stories;
+  // A package already at the repair budget must not be dispatched again; it needs a
+  // blocked mark or an authorised budget raise, so surface it with the blockers.
+  const budget=Number.isSafeInteger(plan?.budget?.max_fix_attempts)?plan.budget.max_fix_attempts:Infinity;
+  const exhausted=s=>Number.isSafeInteger(s.attempts)&&s.attempts>=budget;
   const completed=new Set(tasks.filter(s=>s.status==='done').map(s=>s.id));
-  const actions=[];
+  const actions=[],blocked=[];
   for(const s of tasks){
     if(s.status==='running')actions.push({action:'observe',task_id:s.id});
     else if(s.status==='verifying')actions.push({action:'review',task_id:s.id});
-    else if(s.status==='pending'&&(s.depends_on??[]).every(id=>completed.has(id)))actions.push({action:'execute',task_id:s.id});
+    else if(s.status==='blocked')blocked.push(s.id);
+    else if(s.status==='pending'){
+      if(exhausted(s))blocked.push(s.id);
+      else if((s.depends_on??[]).every(id=>completed.has(id)))actions.push({action:'execute',task_id:s.id});
+    }
   }
   if(actions.length)return actions;
   if(tasks.every(s=>s.status==='done'))return [{action:'final_acceptance'}];
-  return [{action:'resolve_blockers',task_ids:tasks.filter(s=>s.status==='blocked').map(s=>s.id)}];
+  return [{action:'resolve_blockers',task_ids:blocked}];
 }
 
 // Minimal ledger header at the top of progress.md: a touched-but-empty file, or a

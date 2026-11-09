@@ -18,9 +18,9 @@ TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
 # Contract anchors: the load-bearing rules a later edit must not silently drop.
 # Missing anchors are reported as WEAK, never as a non-zero exit.
 CONTRACT_ANCHORS = {
-    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"TeamCreate"),
+    "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"禁止调用"),
     "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
-                               r"下发块用下方 12 项", r"run_in_background"),
+                               r"下发块用下方 12 项", r"后台运行模式"),
     "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id"),
 }
 
@@ -80,7 +80,7 @@ def version_drift():
         issues.append("CHANGELOG.md 缺失")
     readme = ROOT / "README.md"
     if readme.is_file():
-        advertised = re.search(r"\*\*(\d+\.\d+\.\d+)\*\*", readme.read_text(encoding="utf-8"))
+        advertised = re.search(r"当前[^\n]*\*\*(\d+\.\d+\.\d+)\*\*", readme.read_text(encoding="utf-8"))
         if not advertised:
             issues.append("README.md 未写出当前版本号")
         elif advertised[1] != version:

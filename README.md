@@ -10,7 +10,7 @@
 - **动态分包账本**：`prd.json`（机器计划）+ `progress.md`（追加记录）双硬门；未落账本 `check-plan.mjs` 即 `exit 2`，不允许开工。
 - **独立评审 + 代码结构审查**：实现上下文与评审上下文隔离；每轮审查相关模块与调用链，禁以 TODO 放行必须整改项。
 - **修根因**：不在错误结构上堆补丁/补偿分支/新旧竞争方案；触及历史结构问题时安排必要重构，不扩大为无关全仓重写。
-- **卡点主动联网 + 熔断**：修复预算有界（默认 3 次），耗尽或连续 3 次同根因即 `blocked` 保留恢复条件；每包可独立推进。
+- **卡点主动联网 + 熔断**：修复预算有界（默认 3 次），耗尽、连续 3 次无进展或连续 3 次同根因即 `blocked` 保留恢复条件；每包可独立推进。
 
 ## 不同点
 不写死包数与并行度；不堆补丁不掩盖根因；要求上线就不许本地演示交工；中断恢复不重置失败计数；账本未落盘 `exit 2` 不开工。
@@ -90,25 +90,25 @@
 
 ```text
 wish-dev/
-├── SKILL.md                 主入口 + 版本 + 完整流程
-├── references/              生命周期与任务模板（9 个文件）
-│   ├── lifecycle.md         阶段结果与裁剪
-│   ├── workflow.md          任务模板 + 子智能体下发/交付契约
-│   ├── setup-bootstrap.md   执行能力检测与补齐（子智能体/工具调用/Node）
-│   ├── plan-contract.md     prd.json 门禁与状态计数（含账本硬门禁）
-│   ├── continuation.md      检查点与恢复
-│   ├── research-and-architecture.md
-│   ├── code-quality.md
-│   ├── release-handover.md
-│   └── portability.md       安装与宿主能力分层
-├── scripts/                 运行时脚本
-│   └── check-plan.mjs       机器计划门禁（Node 18+，含账本门禁）
-├── tools/                   维护工具（不随技能打包）
-│   ├── package_skill.py     结构校验 + 7 维质量报告 + 打包
-│   ├── test_plan.mjs        门禁测试（node --test）
-│   └── eval/                技能行为压力评估场景（RED-GREEN）
-├── CHANGELOG.md             版本变更记录
-└── AGENTS.md                仓库维护约定
+├── SKILL.md                         主入口 + 版本 + 完整流程
+├── references/                      生命周期与任务模板（9 个文件）
+│   ├── lifecycle.md                 阶段结果与裁剪
+│   ├── workflow.md                  任务模板 + 子智能体下发/交付契约
+│   ├── setup-bootstrap.md           执行能力检测与补齐（子智能体/工具调用/Node）
+│   ├── plan-contract.md             prd.json 门禁与状态计数（含账本硬门禁）
+│   ├── continuation.md              检查点与恢复
+│   ├── research-and-architecture.md 同类项目调研与架构取舍
+│   ├── code-quality.md              代码工整与结构审查
+│   ├── release-handover.md          部署、上线验证与维护交接
+│   └── portability.md               安装、宿主能力与映射
+├── scripts/                         运行时脚本
+│   └── check-plan.mjs               机器计划门禁（Node 18+，含账本门禁）
+├── tools/                           维护工具（不随技能打包）
+│   ├── package_skill.py             结构校验 + 7 维质量报告 + 打包
+│   ├── test_plan.mjs                门禁测试（node --test）
+│   └── eval/                        技能行为压力评估场景（RED-GREEN）
+├── CHANGELOG.md                     版本变更记录
+└── AGENTS.md                        仓库维护约定
 ```
 
 打包**只包含** `SKILL.md`、`references/`、`scripts/`（以及存在时的 `assets/`）；不含 Git 元数据、维护工具（`tools/`）、日志或本机诊断文件。

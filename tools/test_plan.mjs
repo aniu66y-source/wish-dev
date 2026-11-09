@@ -63,6 +63,8 @@ test('returned implementation advances to review',()=>{const p=fixture();p.stori
 test('one blocked package does not stop an independent package',()=>{const p=fixture();p.stories.push({...p.stories[0],id:'WP-02',status:'blocked'});assert.deepEqual(nextActions(p),[{action:'execute',task_id:'WP-01'}]);});
 test('all packages done requests final acceptance rather than declaring delivery',()=>assert.deepEqual(nextActions(done(fixture())),[{action:'final_acceptance'}]));
 test('only blocked work requests blocker investigation',()=>{const p=fixture();p.stories[0].status='blocked';assert.deepEqual(nextActions(p),[{action:'resolve_blockers',task_ids:['WP-01']}]);});
+test('a package at the repair limit is not dispatched again',()=>{const p=fixture();p.stories[0].attempts=3;assert.deepEqual(nextActions(p),[{action:'resolve_blockers',task_ids:['WP-01']}]);});
+test('one exhausted package does not block a ready package',()=>{const p=fixture();p.stories[0].attempts=3;const q=structuredClone(p.stories[0]);q.id='WP-02';q.attempts=0;p.stories.push(q);assert.deepEqual(nextActions(p),[{action:'execute',task_id:'WP-02'}]);});
 
 const ledgerHeader=({blocker=true}={})=>[
   '# progress',

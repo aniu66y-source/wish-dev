@@ -21,7 +21,10 @@
 - 运行根示例去掉具体盘符，统一 `WISH_DEV_RUNTIME_ROOT` 或用户指定目录（5 处）。
 - `package_skill.py` 质量门新增 `contracts` 维度（锚点改为行首正则，缺失即 WEAK，仍不阻断退出码）；再新增 `versions` 维度校验 SKILL/CHANGELOG/README 版本一致（6 维 → 7 维）。
 - 文档口径对齐：eval 触发阈值与 AGENTS 统一为"P0/交付契约措辞或大版本前"；README 错误分类补"目录/不可读"；显式区分交付块绝对路径与 `prd.json` 相对路径；SKILL 首段"默认不动手"与白名单对齐。
-- 派发契约明确子智能体类型与属性：前台 `general-purpose`、只读调研用 `Explore`/`Plan`、独立评审另派新实例（不 resume 实现者）、`run_in_background` 仅限长任务并有界取结果、禁用 `TeamCreate`/`SendMessage`；`transport` 定义 `subagent`/`background-subagent`/`subtask`。
+- 派发契约明确子智能体类型与属性：前台派生、探索/规划型用于调研与设计、评审另派新实例、后台运行模式仅限长任务并有界取回、禁用团队设施；`transport` 定义 `subagent`/`background-subagent`/`subtask`。
+- 子智能体能力表述改为宿主无关：SKILL/workflow 用能力名，具体工具名集中到 `portability.md`「宿主能力映射」；并纠正“探索型=只读”的误述（其工具集可能含命令执行与消息能力，须在下发块禁写禁组队）。
+- 文档口径：README 熔断补“连续 3 次无进展”；SKILL“同批号”改为“同一条线”；README 结构树对齐并补 research/quality 行说明。
+- 调度与校验：`nextActions` 对已达修复预算的 `pending` 返回 `resolve_blockers`，不再催派下一次；`budget` 校验改为逐项可读判断；`version_drift` 只匹配 README“当前版本”行；质量门锚点改用能力词。
 - `continuation.md` 的 4 类结束条件与 `SKILL.md` 同序。
 - 行为评估新增 SC-04（主对话越权执行）、SC-05（熔断后换壳重试）；**2.2.0 未运行 RED/GREEN 采样**，仅做结构、门禁与文档一致性验证（见 `tools/eval/README.md` 当前状态）。
 - 新增本文件；README 去重复的平台前提段、补 Windows 校验命令与临时文件落点。
