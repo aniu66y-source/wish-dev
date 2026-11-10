@@ -1,4 +1,4 @@
-# 执行记录、任务包与后端任务束
+# 执行记录、任务包与交付契约
 
 ## 状态与真相来源
 
@@ -71,7 +71,7 @@ last-change / concrete-next-action / blocker / handover-status
 **2 条调度硬规则（契约本身替代不了）：**
 
 1. **共享契约唯一写入人**：公共接口、数据模型、依赖清单、锁文件、迁移顺序由一条指定"集成线"独占写入，其余线只读引用。这是避免交接漂移的真正关键，比任何字段都重要。
-2. **任务编号 = 并行线标识**：`<线>` 是并行维度，`<序号>` 是线内顺序。跨线依赖显式写在"依赖"字段，不靠隐式约定。
+2. **任务编号 = 并行线标识**：`<线>` 是并行维度，`<序号>` 用于线内编号，不自动建立先后关系。线内与跨线依赖都显式写在 `depends_on`，不靠编号推断。
 
 ## 子智能体任务下发契约（主对话 → 执行子智能体）
 
@@ -123,10 +123,10 @@ last-change / concrete-next-action / blocker / handover-status
 其他说明：授权变化、依赖变化、恢复条件等。
 ~~~
 
-- **状态 4 态对齐账本**：`done`（已验收）/ `verifying`（实现已返回、待主对话验收）/ `blocked`（修复预算耗尽或外部条件缺，附恢复条件）/ `partial`（部分完成，列未完成事项）。不另造"已完成/未完成"口语态。
+- **交付块状态与账本映射**：`done`（已验收）/ `verifying`（实现已返回、待主对话验收）/ `blocked`（修复预算耗尽或外部条件缺，附恢复条件）/ `partial`（部分完成，列未完成事项）。不另造"已完成/未完成"口语态。
 - **`partial` 的账本映射**：账本状态仍是上方五态之一，不新增机器状态——仍有未完成工作则保持 `running`/`verifying`，需重领实现则回 `pending`；未完成事项与原因记入 `progress.md`，主对话核对应记哪态后更新。
 - `done` 须附非空证据路径 + 独立评审（另派新实例、不复用实现者会话）的 spec/quality 通过；只读提示词不等于系统隔离。
-- **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + **评审材料**。派发实现前记录基线（`BASE`、HEAD/索引/工作区/未跟踪各层摘要、写入范围），用 `node "<skill>/scripts/review-material.mjs" snapshot --repo <repo> --out <runtime>/baseline-T-x-y.json --scope "<allowed_files>"`；评审前用同一脚本 `collect` 生成材料，覆盖 `BASE..HEAD` 提交、暂存、未暂存、未跟踪新增、删除与重命名，按层判定归属（task / pre-existing / mixed / unknown），任务前已有用户改动不并入本任务交付。只比较 `git diff <BASE>..HEAD` 会漏掉未提交实现，不能作为完整材料。无 Git 或无提交时用前后文件清单 + SHA-256 指纹。材料落文件不贴正文；材料为空且无其他产物/证据时不得派评审，评审者不空评。`collect` 会校验快照仓库/模式/范围/`BASE` 身份，输出必须落在仓库外。规则与限制见 [plan-contract.md](plan-contract.md)「评审材料与基线」。
+- **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + **评审材料**。派发实现前记录基线（`BASE`、HEAD/索引/工作区/未跟踪各层摘要、写入范围），用 `node "<skill>/scripts/review-material.mjs" snapshot --repo "<repo>" --out "<runtime>/baseline-T-x-y.json" --scope "src/**,test/**"`；其中路径与 scope 替换为本任务实际值，scope 用逗号分隔字符串而非 `allowed_files` JSON 数组；评审前用同一脚本 `collect --snapshot "<runtime>/baseline-T-x-y.json"` 并提供实际 `--repo` / `--out` 生成材料，覆盖 `BASE..HEAD` 提交、暂存、未暂存、未跟踪新增、删除与重命名，按层判定归属（task / pre-existing / mixed / unknown），任务前已有用户改动不并入本任务交付。只比较 `git diff <BASE>..HEAD` 会漏掉未提交实现，不能作为完整材料。无 Git 或无提交时用前后文件清单 + SHA-256 指纹。材料落文件不贴正文；材料为空且无其他产物/证据时不得派评审，评审者不空评。`collect` 会校验快照仓库/模式/范围/`BASE` 身份，输出必须落在仓库外。规则与限制见 [plan-contract.md](plan-contract.md)「评审材料与基线」。
 - **证据路径两套写法**：交付块里写**绝对路径**方便主对话抽查；写进 `prd.json` 的 `evidence` 必须是愿望目录下的**相对路径**（`evidence/…`），两者不要混用。
 - 主对话读交付块后**抽查证据文件**再更新账本；子智能体回报不自动等于事实。
 - 下发单个任务时仅回传该任务状态及证据，不让子智能体自行判定整体交工。
