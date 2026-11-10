@@ -13,30 +13,58 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_DIRS = ("references", "scripts", "assets")
-EXCLUDED = {"__pycache__"}
+# Publish boundary: only known text/asset types are packaged. Anything else inside a
+# resource directory is a hard error instead of a silent drop, so a stray log, cache,
+# archive or editor backup cannot ride along and cannot be forgotten quietly either.
+PUBLISH_SUFFIXES = {".md", ".py", ".mjs", ".js", ".json", ".yaml", ".yml", ".txt",
+                    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico"}
+BLOCKED_DIRS = {"__pycache__", "node_modules", "dist", "packages", ".git", ".venv",
+                ".pytest_cache", ".ruff_cache"}
+BLOCKED_SUFFIXES = {".pyc", ".pyo", ".log", ".tmp", ".temp", ".bak", ".swp", ".swo",
+                    ".zip", ".tar", ".gz", ".map", ".cache", ".sqlite", ".db", ".env"}
 TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
 # Contract anchors: the load-bearing rules a later edit must not silently drop.
 # Missing anchors are reported as WEAK, never as a non-zero exit.
 CONTRACT_ANCHORS = {
     "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"禁止调用\*\*任何团队",
                  r"^### 宿主每轮动作硬规则", r"^\*\*领导层执行白名单\*\*",
-                 r"每任务修复预算默认 3 次"),
+                 r"每任务修复预算默认 3 次", r"^\*\*指令优先级\*\*"),
     "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
-                               r"下发块用下方 12 项", r"后台运行模式\*\*只用于"),
-    "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id"),
+                               r"下发块用下方 12 项", r"运行模式：按宿主能力选择",
+                               r"review-material\.mjs"),
+    "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id",
+                                    r"^## 写入权限（三类）", r"^## 评审材料与基线"),
 }
 
 
 def resources():
+    """Publishable resources: SKILL.md plus allowlisted files under the resource dirs.
+
+    The boundary is name/suffix based. It keeps logs, caches, temp files and archives
+    out, but it cannot recognise every credential or diagnostic blob; the manual diff
+    review in README/AGENTS still applies.
+    """
     result = [ROOT / "SKILL.md"]
+    rejected = []
     for name in RESOURCE_DIRS:
         directory = ROOT / name
-        if directory.is_dir():
-            result.extend(p for p in directory.rglob("*")
-                          if p.is_file() and not any(
-                              part.startswith(".") or part in EXCLUDED
-                              for part in p.relative_to(ROOT).parts)
-                          and p.suffix not in {".pyc", ".pyo"})
+        if not directory.is_dir():
+            continue
+        for path in directory.rglob("*"):
+            if not path.is_file():
+                continue
+            parts = path.relative_to(ROOT).parts
+            if any(part.startswith(".") or part in BLOCKED_DIRS for part in parts):
+                continue
+            suffix = path.suffix.lower()
+            if suffix in BLOCKED_SUFFIXES or suffix not in PUBLISH_SUFFIXES:
+                rejected.append(path.relative_to(ROOT).as_posix())
+                continue
+            result.append(path)
+    if rejected:
+        raise ValueError(
+            "Refusing to package non-publishable files (logs, caches, temp files, archives "
+            "and unknown types are never resources): " + ", ".join(sorted(rejected)))
     return sorted(result)
 
 
@@ -159,23 +187,172 @@ def js_syntax(path):
     return True
 
 
+class Scalar(str):
+    """A frontmatter scalar that remembers whether the source value was quoted."""
+
+    def __new__(cls, value, quoted):
+        scalar = str.__new__(cls, value)
+        scalar.quoted = quoted
+        return scalar
+
+
+# Plain values YAML would type as null/bool/number. String fields must be quoted so the
+# validator and the host agree on the type instead of silently disagreeing.
+TYPED_PLAIN = re.compile(
+    r"^(?:~|null|Null|NULL|true|True|TRUE|false|False|FALSE|yes|Yes|YES|no|No|NO"
+    r"|on|On|ON|off|Off|OFF|[-+]?(?:0|[1-9][0-9_]*)(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?"
+    r"|0x[0-9a-fA-F_]+|0o[0-7_]+|[-+]?\.(?:inf|Inf|INF|nan|NaN|NAN))$")
+
+DOUBLE_QUOTE_ESCAPES = {
+    "\\": "\\",
+    '"': '"',
+    "/": "/",
+    "n": "\n",
+    "t": "\t",
+    "r": "\r",
+    "b": "\b",
+    "f": "\f",
+}
+
+
+def _double_quoted(body, number):
+    out = []
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == '"':
+            raise ValueError(f"frontmatter line {number}: unescaped double quote inside a quoted value")
+        if char == "\\":
+            if index + 1 >= len(body):
+                raise ValueError(f"frontmatter line {number}: value ends with a dangling escape")
+            nxt = body[index + 1]
+            if nxt not in DOUBLE_QUOTE_ESCAPES:
+                raise ValueError(f"frontmatter line {number}: unsupported escape \\{nxt}")
+            out.append(DOUBLE_QUOTE_ESCAPES[nxt])
+            index += 2
+            continue
+        out.append(char)
+        index += 1
+    return Scalar("".join(out), True)
+
+
+def _single_quoted(body, number):
+    out = []
+    index = 0
+    while index < len(body):
+        if body[index] == "'":
+            if index + 1 < len(body) and body[index + 1] == "'":
+                out.append("'")
+                index += 2
+                continue
+            raise ValueError(f"frontmatter line {number}: unescaped single quote inside a quoted value")
+        out.append(body[index])
+        index += 1
+    return Scalar("".join(out), True)
+
+
+def _frontmatter_scalar(value, number):
+    if value.startswith('"'):
+        if len(value) < 2 or not value.endswith('"'):
+            raise ValueError(f"frontmatter line {number}: unterminated double-quoted value")
+        return _double_quoted(value[1:-1], number)
+    if value.startswith("'"):
+        if len(value) < 2 or not value.endswith("'"):
+            raise ValueError(f"frontmatter line {number}: unterminated single-quoted value")
+        return _single_quoted(value[1:-1], number)
+    first = value[0]
+    if first in "[{|>&*!@%`":
+        raise ValueError(
+            f"frontmatter line {number}: unsupported YAML syntax {first!r}; "
+            "only plain or quoted single-line scalars are supported")
+    if first in "-?:" or first == "#":
+        raise ValueError(
+            f"frontmatter line {number}: a plain scalar cannot start with {first!r}; quote the value")
+    if ": " in value or value.endswith(":"):
+        raise ValueError(
+            f"frontmatter line {number}: an unquoted ': ' is ambiguous in YAML; quote the value")
+    if " #" in value:
+        raise ValueError(f"frontmatter line {number}: inline comments are not supported")
+    if TYPED_PLAIN.match(value):
+        raise ValueError(
+            f"frontmatter line {number}: {value!r} would be read as a non-string YAML type; quote it")
+    return Scalar(value, False)
+
+
+def parse_frontmatter(body):
+    """Parse the minimal YAML subset this repository's SKILL.md uses.
+
+    Supported: top-level `key: value`, one nested block under a top-level key indented by
+    two spaces, blank lines and full-line `#` comments, plain or quoted single-line
+    scalars. Rejected on purpose (no third-party dependency, and accepting input this
+    parser cannot verify would be worse than refusing it): tabs, deeper nesting,
+    sequences, flow collections, anchors/aliases, block scalars, unclosed quoting,
+    inline comments and duplicate keys.
+    """
+    data = {}
+    parent_key = None
+    for number, raw in enumerate(body.split("\n"), 1):
+        if "\t" in raw:
+            raise ValueError(f"frontmatter line {number}: tabs are not supported")
+        line = raw.rstrip()
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent not in (0, 2):
+            raise ValueError("frontmatter line "
+                             f"{number}: only a top level and one 2-space nested block are supported")
+        key, separator, value = line.strip().partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not separator or not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+            raise ValueError(f"frontmatter line {number}: expected `key: value`")
+        if indent == 0:
+            if key in data:
+                raise ValueError(f"frontmatter line {number}: duplicate key {key!r}")
+            if value:
+                data[key] = _frontmatter_scalar(value, number)
+                parent_key = None
+            else:
+                data[key] = {}
+                parent_key = key
+            continue
+        if parent_key is None:
+            raise ValueError(f"frontmatter line {number}: nested key {key!r} has no parent mapping")
+        if not value:
+            raise ValueError(f"frontmatter line {number}: nesting deeper than one level is not supported")
+        block = data[parent_key]
+        if key in block:
+            raise ValueError(f"frontmatter line {number}: duplicate key {parent_key}.{key}")
+        block[key] = _frontmatter_scalar(value, number)
+    return data
+
+
 def validate(files):
     manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     front = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", manifest, re.S)
     if not front:
         raise ValueError("SKILL.md must begin with closed YAML frontmatter")
-    # Validate this repository's simple single-line metadata, not arbitrary YAML.
-    name_match = re.search(r"^name:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$",
-                           front[1], re.M)
-    version_match = re.search(r'^  version:\s*"(\d+\.\d+\.\d+)"\s*$',
-                              front[1], re.M)
-    description_match = re.search(r"^description:\s*(.+)$", front[1], re.M)
-    if not name_match or len(name_match[1]) > 64:
+    data = parse_frontmatter(front[1])
+    name = data.get("name")
+    if (not isinstance(name, str) or len(name) > 64
+            or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name)):
         raise ValueError("Invalid skill name")
-    if not version_match:
-        raise ValueError("Expected quoted metadata.version in x.y.z format")
-    if not description_match or not 1 <= len(description_match[1]) <= 1024:
+    if "version" in data:
+        raise ValueError("version must be nested under metadata, not a top-level key")
+    metadata = data.get("metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata must be a mapping containing version")
+    version = metadata.get("version")
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError('Expected metadata.version in x.y.z format, e.g. version: "1.0.0"')
+    if not getattr(version, "quoted", False):
+        raise ValueError('metadata.version must be quoted, e.g. version: "1.0.0"')
+    description = data.get("description")
+    if not isinstance(description, str) or not 1 <= len(description) <= 1024:
         raise ValueError("Invalid skill description")
+    for key in ("license", "compatibility"):
+        if key in data and not isinstance(data[key], str):
+            raise ValueError(f"{key} must be a top-level single-line value")
     packaged = {p.resolve() for p in files}
     link_count = 0
     js_checked = js_skipped = 0
@@ -207,7 +384,7 @@ def validate(files):
                     if resolved not in packaged:
                         raise ValueError("Missing packaged reference: " + target)
                     link_count += 1
-    return {"name": name_match[1], "version": version_match[1],
+    return {"name": str(name), "version": str(version),
             "file_count": len(files), "internal_links_checked": link_count,
             "js_syntax_checked": js_checked, "js_syntax_skipped": js_skipped,
             "skill_quality": skill_quality(manifest)}

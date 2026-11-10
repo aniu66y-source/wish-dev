@@ -79,10 +79,20 @@ export function validatePlan(plan) {
     if(!storyId(s.id))errors.push(prefix+'.id must be a string matching T-2-01, or legacy WP-01/S-01');
     else{if(ids.has(s.id))errors.push('duplicate story id');ids.add(s.id);}
     requireText(s.title,prefix+'.title');
-    if(!Array.isArray(s.allowed_files)||!s.allowed_files.length||s.allowed_files.some(v=>!text(v)))errors.push(prefix+'.allowed_files must declare the implementation scope');
+    // allowed_files is the writable scope only. A read-only task declares read_only and
+    // must not claim writable paths; read scope never doubles as write authorisation.
+    if(!Array.isArray(s.allowed_files)||s.allowed_files.some(v=>!text(v)))errors.push(prefix+'.allowed_files must be a string array of writable paths');
+    else if(s.read_only===true){
+      if(s.allowed_files.length)errors.push(prefix+'.read_only must not declare writable allowed_files');
+    }else if(!s.allowed_files.length)errors.push(prefix+'.allowed_files must declare the writable scope, or mark the task read_only');
+    if(s.read_only!==undefined&&typeof s.read_only!=='boolean')errors.push(prefix+'.read_only must be boolean');
+    if(s.read_scope!==undefined&&(!Array.isArray(s.read_scope)||s.read_scope.some(v=>!text(v))))errors.push(prefix+'.read_scope must be a string array');
     if(!states.has(s.status))errors.push(prefix+'.status is invalid');
     if(!Number.isSafeInteger(s.attempts)||s.attempts<0||s.attempts>budget.max_fix_attempts)errors.push(prefix+'.attempts exceeds retry budget or is invalid');
-    else if(s.attempts>=budget.max_fix_attempts&&(s.status==='pending'||s.status==='running'))errors.push(prefix+'.attempts has reached the repair budget; mark it blocked or raise budget.max_fix_attempts');
+    // attempts counts fixes already started. A running task at the limit is the last
+    // legitimately started fix and stays observable; only a pending task at the limit
+    // may not be dispatched again.
+    else if(s.attempts>=budget.max_fix_attempts&&s.status==='pending')errors.push(prefix+'.attempts has reached the repair budget; mark it blocked or raise budget.max_fix_attempts (a running final fix may finish)');
     if(!Array.isArray(s.accept_refs)||!s.accept_refs.length)errors.push(prefix+'.accept_refs must not be empty');
     else for(const id of s.accept_refs){if(!criterionId(id)||!criteria.has(id))errors.push(prefix+'.accept_refs contains an invalid or unknown criterion');else covered.add(id);}
     if(!Array.isArray(s.verify)||!s.verify.length)errors.push(prefix+'.verify must contain an executable or observable check');
@@ -131,8 +141,9 @@ export function validatePlan(plan) {
 // A scheduling hint, not an executor or a permission grant. Validate the plan first.
 export function nextActions(plan) {
   const tasks=plan.stories;
-  // A package already at the repair budget must not be dispatched again; it needs a
-  // blocked mark or an authorised budget raise, so surface it with the blockers.
+  // A pending package already at the repair budget must not be dispatched again; it needs
+  // a blocked mark or an authorised budget raise. A running one is the final fix already
+  // started, so it is observed instead of reported as a blocker.
   const budget=Number.isSafeInteger(plan?.budget?.max_fix_attempts)?plan.budget.max_fix_attempts:Infinity;
   const exhausted=s=>Number.isSafeInteger(s.attempts)&&s.attempts>=budget;
   const completed=new Set(tasks.filter(s=>s.status==='done').map(s=>s.id));

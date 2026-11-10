@@ -2,7 +2,7 @@
 
 `prd.json` 是唯一机器计划，沿用 wishes/<wish-id>/ 或项目既有账本位置。原始愿望、设计和人可读判据可按规模合并，但须与计划一致。机器门禁检查字段、固定源码引用、判据覆盖、状态与重试预算；不会执行 `verify` 命令、访问 GitHub、证明架构质量或读取证据内容。结构通过后仍须真实执行和独立验收。
 
-Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实现前、回退状态后、每次标 done 后和最终交付前运行；非零先纠正计划。缺 Node 按 [setup-bootstrap.md](setup-bootstrap.md) 自动安装 Node ≥ 18 并复测，不把手填 ok 当门禁通过；补齐前可继续其他独立调查/规划。纯只读包在 allowed_files 声明可读范围及禁止写入，字段不授予写权。
+Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实现前、回退状态后、每次标 done 后和最终交付前运行；非零先纠正计划。缺 Node 按 [setup-bootstrap.md](setup-bootstrap.md) 自动安装 Node ≥ 18 并复测，不把手填 ok 当门禁通过；补齐前可继续其他独立调查/规划。字段语义见下方「写入权限（三类）」：`allowed_files` 只表示可写范围，不表示可读范围。
 
 ## 账本落盘硬门禁（ledger gate）
 
@@ -29,6 +29,38 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 调研/需求/设计尚未完成时可维护同一份明确标记的计划草稿，非零是预期结果；允许继续不依赖缺项的只读调查与规划，不能据此启动产品实现或伪填 research.complete。门禁不通过只阻止产品实现、完成标记及依赖推进，不阻止修正计划本身。
 
+## 写入权限（三类）
+
+同一轮授权按用途分三类，互不取代，也不并入同一个字段：
+
+1. **产品文件写入权**：`allowed_files` 用仓库相对通配只声明本任务可写的产品文件，既不表示可读范围，也不授予其他任务的文件。实现任务只在归属范围内写；共享契约、公共接口、数据模型、依赖清单、锁文件和迁移顺序只能由承担集成线的任务在自己的 `allowed_files` 里声明，普通任务不得写。只读调查/设计任务用 `read_only: true` + 空 `allowed_files`，需要时用 `read_scope` 写要读的路径（只读，不授予写权），并在下发块写明禁止修改产品文件。
+2. **正式产物写入权**：需求、设计、评审报告等正式产物由主对话落盘，或由被指派任务写到其 `allowed_files` 与证据目录内明确位置。独立评审只能写评审结果与证据，不得修改被审实现。
+3. **证据与临时输出写入权**：任何任务都可以把证据、日志、工作副本写到本轮授权的运行根独占目录（`<runtime>/<project>/<task>/<run>/`）和愿望目录的 `evidence/`；这类写入不需要 `allowed_files`，但不得落到产品源码目录或全局缓存，收尾按 [workflow.md](workflow.md) 清理。
+
+删除性操作（`git reset/clean/stash`、覆盖用户改动、清空目录）不属于以上任一类授权，须单独取得用户确认。
+
+## 评审材料与基线
+
+- 任务启动时记录基线：`BASE`（`git rev-parse HEAD`，仓库无提交则记无）、**各层**已有的状态——HEAD blob、索引 blob、工作区内容摘要、未跟踪文件摘要，以及本任务写入范围，落盘为运行目录下的基线快照。
+- 候选集合 = 基线文件 ∪ 当前 `git status` 路径 ∪ 提交差异路径：只列当前 Git 差异会把“任务把用户改动恢复成 HEAD”这类变化当成未变化。
+- 评审材料必须覆盖本任务实际交付的**全部**变化：`BASE..HEAD` 提交差异、暂存区差异、未暂存差异、未跟踪新增文件内容、删除文件清单。只比较 `BASE..HEAD` 会漏掉未提交实现——用户未授权提交时，实现可能完全不出现在材料里。
+- 快照记录 `base: null` 表示“当时没有提交”，与“没有快照”不同：用空树作 BASE 与首次提交比较，不用当前 HEAD 覆盖已记录的空基线；首次提交中的文件按快照指纹区分任务新建、任务修改与任务前已有。
+- **按层比对，不跨层推断**：提交与索引用各自的 blob 摘要判断，工作区用自身摘要判断。工作区摘要与任务开始时相同，不等于索引或提交没变；用工作区摘要过滤暂存/提交变化会丢材料。
+- **归属与“是否变化”分开判断**：某层是否变化，用该层基线（index 对快照 index、worktree 对快照 worktree、committed 对 `BASE`）判断；内容来源另用任务开始时的内容摘要判断。索引与工作区在任务开始时本来不同，不等于任务改了内容，不得因此判 `mixed`；用户已有内容被暂存/提交只说明“位置变化”，内容仍归用户。
+- **每条变化都要有可复核材料**：不能因为该层存在 diff 就认为每个文件都有 diff；按文件询问 Git 是否有差异，没有文本差异的基线变化补出前后指纹与当前内容。完整性（`integrity`）按实际材料判断，而不是按“命令成功”判断。
+- 未跟踪文件要显式收集内容，不能改成 `git diff <BASE>` 就宣称完整；任务前未跟踪、之后被提交的文件，也要按快照里的未跟踪摘要判定归属，不能只查“当时是否脏”。
+- 归属结果只有 `task` / `pre-existing` / `mixed` / `unknown` 四类：任务前已有、内容未变的用户改动不并入本任务实现内容；同一文件被用户与任务先后修改、或只改变暂存/提交位置而内容未变时，标 `mixed` 或 `pre-existing` 并保留对应差异，交协调者核对，不伪装成机器已判定，也不静默删除。
+- 重命名同时覆盖原路径删除与新路径新增；旧路径与新路径**分别**做 scope 判断，范围外路径不得仅因重命名关系被重新加入 diff 参数；Git 路径参数按字面处理（`--literal-pathspecs`），文件名中的 `*`、`?` 不当作通配。
+- 删除要保留基线指纹，提交删除还应给出基线内容（可读时）；无 Git 快照只保存摘要时，必须显示真实摘要与字节数，并说明正文未保存，不得写“（无）”，也不得伪造可恢复的旧内容。
+- 无 Git 或无初始提交时，用前后文件清单 + SHA-256 指纹列出新增、修改、删除，并为修改文件给出前后指纹与当前内容（或明确的快照入口）；大文件、二进制、不可读文件标 `incomplete`，不能用两个空值相等判定“未变化”。
+- 范围语义分三种，不能混用：**声明范围**（按 `allowed_files` 通配）、**显式空范围**（只读任务不写产品文件，任何变化都不算本任务交付）、**未声明范围**（无法按范围归属，材料必须明示，不能默认整仓当作本任务交付）。`**` 段匹配零到多层完整目录，`*` 不跨目录。
+- 多任务共享工作区时按各自写入范围形成材料，范围外写入只列清单不并入，避免混入其他线尚未完成的写入。
+- 基线快照必须校验身份：仓库（`--repo` 允许传子目录，统一规范化为仓库根后再比对）、Git/非 Git 模式、范围、`BASE` 与本次一致；不一致时拒绝采集而不是给出可信归属。快照缺失或不可读时直接报错；无快照降级时材料必须显式写“归属 unknown、材料不完整”，不得同时声称“任务前归属已核对”。
+- 材料与基线不得写进仓库或互相覆盖；采集器声明只读，输出路径在仓库内即拒绝。判断用路径组件（`rel === '..'` 或以 `'..' + 分隔符` 开头）而不是前缀字符串，名为 `..internal` 的仓库内目录仍算仓库内；同时解析已有文件与最近存在祖先的真实路径，防止符号链接/联接点把仓库外路径指回仓库内或基线；拒绝发生在任何 mkdir/写入之前，原文件字节不变。
+- 内容完整性独立于命令成功：`ok` 只表示采集命令执行成功，另以 `integrity.status`（`complete` / `incomplete`）与 `integrity.limits` 记录二进制、超出正文展示、超出摘要上限、读取失败、基线内容不可用等限制，并给出文件、层、原因、字节数、摘要与引用；正文第 8 节必须与之一致。
+- 只读调查/设计等确无源码差异的任务，以其实际产物与验证证据评审，不要求制造无意义的源码 diff。
+- 采集用 `scripts/review-material.mjs`（`snapshot` 记各层基线、`collect` 生成材料），它不提交、不暂存、不重置工作区；材料只作评审输入，不替代证据与验收。主对话可直接生成材料，但仍不得修改产品源码，也不为凑材料自动提交用户工作区。
+
 ## JSON 字段
 
 - `version` 固定 `1`；`wish_id` 为本轮稳定 ID。
@@ -39,7 +71,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - `architecture.concurrency`：适用时 `{applicable:true, assumptions, controls, verification}`；不适用时 `{applicable:false, reason}`。
 - `architecture.load_balancing`：适用时 `{applicable:true, strategy, state, failure_handling, verification}`；不适用时 `{applicable:false, reason, scale_trigger}`。每个说明字段为有意义的非空字符串。
 - `budget`：正整数 `max_fix_attempts`，必填、建议 3、用户实际预算优先（缺省会过不了门禁报 `must be a positive integer`，无内置兜底）。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
-- `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "T-1-01"`（`T-<线>-<序号>`，序号至少两位数字，与下发块「任务编号」、交付块、`depends_on` 用**同一字符串**，避免二次编号；旧 `WP-01`/`S-01` 仍接受但不再用于新计划）、`title`、`status`、`attempts`、非空 `allowed_files`、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。`depends_on` 若存在必须引用已知 task ID（同一套编号），不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
+- `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "T-1-01"`（`T-<线>-<序号>`，序号至少两位数字，与下发块「任务编号」、交付块、`depends_on` 用**同一字符串**，避免二次编号；旧 `WP-01`/`S-01` 仍接受但不再用于新计划）、`title`、`status`、`attempts`、`allowed_files`（可写范围，见「写入权限（三类）」）、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`read_only`、`read_scope`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。只读任务写 `read_only: true` 且 `allowed_files: []`；声明 `read_only` 却带非空 `allowed_files` 会被判为自相矛盾。`depends_on` 若存在必须引用已知 task ID（同一套编号），不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
 
 ## 状态和验证
 
@@ -51,7 +83,14 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - 浏览器：`{"kind":"browser","action":"实际操作","expected":"可观察结果"}`。
 - 必须人工判断的项目：`{"kind":"manual","action":"查看内容","expected":"判断标准"}`；未执行时保留未验收，不把它算自动通过。
 
-`attempts` 统计已发起的修复尝试，不统计正常状态轮询。达到修复上限且仍未解决，或达到熔断条件时设 `blocked`，继续其他独立工作，不能靠归零继续。首次实现和轮询不计修复。任务数量超出预算时，缩小当前交付范围或取得扩大预算的授权，不静默丢弃需求。门禁拒绝 `pending`/`running` 且 `attempts` 已达 `budget.max_fix_attempts` 的状态：先标 `blocked` 或经授权提高预算，不能靠再派一次绕过。
+`attempts` 统计**已发起**的修复次数，首次实现和正常状态轮询不计。预算语义（`budget.max_fix_attempts`，默认 3）：
+
+- 派发一次修复前先持久增加 `attempts`；`pending` 且已达上限时不得再派发，只能标 `blocked` 或取得扩大预算的授权。
+- 已合法发起的最后一次修复可以保持 `running`：门禁允许，调度提示为 `observe`（观察原任务），不再被判为非法。
+- 最后一次修复返回后转 `verifying`（提示 `review`）；验收通过可 `done`，仍失败则 `blocked`。
+- `attempts` 超过上限在任何状态都拒绝。
+- 不允许通过减少 `attempts`、换任务 ID、伪造 `running`/`done` 绕过预算。门禁只校验结构与计数，`attempts` 是否与实际派发一致由协调者对照 `progress.md` 核对，文档不把它当成机器已验证。
+- 任务数量超出预算时，缩小当前交付范围或取得扩大预算的授权，不静默丢弃需求。
 
 只有实际验收通过才设 `done`，并附非空 `evidence` 路径数组、实现标识，以及 `review: {"context_id":"实际独立评审上下文标识","spec":"pass","quality":"pass"}`。实现与评审标识用 `context_id`；旧计划可沿用 `sessionId`，两者等效但**两侧不得重合**；同侧同时填写不单独报错。标识须能追溯真实会话/运行记录，实现和评审上下文不同，不能随意造两个字符串冒充独立评审。`context_id` 与 `sessionId` 均参与比对——任一侧已有标识与另一侧重合即判非独立，不能用另一字段绕开。缺独立上下文则记录未评审，不伪造子智能体/会话 ID。只读提示词不代表系统隔离。路径均相对本轮愿望目录，位于 `evidence/`（前缀大小写不敏感，兼容 Windows），不含 `..`、盘符或绝对路径。文件真实存在、内容与当前实现一致、会话真实独立，需要主控另行核查；字段和一串路径不能替代证据。
 
@@ -61,7 +100,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 
 ## 下一动作及旧版衔接
 
-检查器输出 next_actions：observe（观察原任务）、review（独立评审）、execute（就绪包候选）、final_acceptance（执行整体验收）、resolve_blockers（调查剩余阻塞，含已达修复预算的 `pending`：须标 `blocked` 或提高预算）。脚本不执行任务、不改账本、不授予权限或判定交工；候选不代表全部同时派发，仍须核对实际资源、文件归属和未知写入。非零返回空列表。按 [continuation.md](continuation.md) 直接执行下一动作，不等用户继续。
+检查器输出 next_actions：observe（观察原任务，含已达预算的最后一次修复）、review（独立评审）、execute（就绪包候选）、final_acceptance（执行整体验收）、resolve_blockers（调查剩余阻塞，含已达修复预算的 `pending`：须标 `blocked` 或提高预算）。一次合法的最后一次修复在运行，不会让其他已就绪线的 `execute` 提示消失。脚本不执行任务、不改账本、不授予权限或判定交工；候选不代表全部同时派发，仍须核对实际资源、文件归属和未知写入。非零返回空列表。按 [continuation.md](continuation.md) 直接执行下一动作，不等用户继续。
 
 旧版模板状态映射：ready → pending、review → verifying、integrated → done；迁移须逐包核实真实进度、原始 ID、实际证据及评审，保留历史映射，不批量改名后当成通过。旧 done 无当前证据则回到 verifying/pending。既有 schema 1 计划与 S-ID 继续可用，不重建任务。
 

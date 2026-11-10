@@ -17,11 +17,11 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.2.0**）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.0**）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 版本号序列为 2.0.0 → 2.1.0 → 2.1.2 → 2.2.0；仓库不存在 `v2.1.1` 提交或 tag
-- 2.2.0 已发布（2026-11-09）；Release 附 zip/manifest/sha256 三件套
+- 版本号序列为 2.0.0 → 2.1.0 → 2.1.2 → 2.2.0 → 2.3.0；仓库不存在 `v2.1.1` 提交或 tag
+- 2.2.0 已发布（2026-11-09）；2.3.0 是尚未发布的本地改动，未打标签、未创建 Release
 
 ---
 
@@ -36,7 +36,7 @@
 ```
 
 **宿主要求**：能读文件、执行命令、访问授权项目、跟踪长任务。
-**平台前提**：能派生子智能体 + 模型支持工具调用（Windows 已实测，其他宿主需自行验证；不满足任一则降级为整理需求/计划，不声称完整开发）。
+**平台前提**：能派生独立执行体（子智能体，或满足「执行工具 / 上下文隔离 / 任务可追踪 / 可独立评审」四项的隔离子任务）+ 模型支持工具调用（Windows 已实测，其他宿主需自行验证；不满足则降级为整理需求/计划，不声称完整开发）。
 **临时文件落点**：运行缓存、工作副本放 `WISH_DEV_RUNTIME_ROOT` 或你指定的目录，不写进项目或全局缓存。
 
 **安装**：
@@ -76,7 +76,9 @@
 
 | 原则 | 说明 |
 |---|---|
-| **宿主子智能体执行** | 调查/实现/测试/部署/评审全部下发宿主子智能体；主对话只做规划/分派/验收，直接动手仅限白名单（账本/证据落盘、门禁脚本、差异文件、能力探测、收尾清理）；前台派生为主，后台仅限长任务，不用团队队友 |
+| **宿主子智能体执行** | 调查/实现/测试/部署/评审全部下发宿主独立执行体；主对话只做规划/分派/验收，直接动手仅限白名单（账本/证据落盘、门禁脚本、评审材料采集、能力探测、收尾清理）；同步并行或异步派生按宿主能力选择，不写死并行度，不用团队队友 |
+| **写入权限三类** | 产品文件（`allowed_files`，只读任务用 `read_only` + 空数组）、正式产物（需求/设计/评审报告）、证据与临时输出（运行根/`evidence/`）分别授权；共享契约/锁文件只由集成线写 |
+| **评审材料完整** | 评审输入覆盖 `BASE..HEAD` 提交、暂存、未暂存、未跟踪新增、删除与重命名，按 HEAD/索引/工作区/未跟踪各层分别比对归属，排除任务前已有用户改动；只比较提交会漏掉未提交实现 |
 | **多线并行 + 任务编号** | 规划时分离模块多线并行，每线 `T-<线>-<序号>`；账本 `stories[].id`、下发块、`depends_on` 同号，避免交接漂移；不写死包数与并行度 |
 | **修根因** | 先定位错误结构，不在错误结构上堆补丁/补偿分支/新旧竞争方案 |
 | **敏感凭据隔离** | 模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
@@ -103,44 +105,68 @@ wish-dev/
 │   ├── release-handover.md          部署、上线验证与维护交接
 │   └── portability.md               安装、宿主能力与映射
 ├── scripts/                         运行时脚本
-│   └── check-plan.mjs               机器计划门禁（Node 18+，含账本门禁）
+│   ├── check-plan.mjs               机器计划门禁（Node 18+，含账本门禁）
+│   └── review-material.mjs          评审材料采集（各层基线 + 提交/暂存/未暂存/未跟踪/删除/重命名）
 ├── .github/workflows/ci.yml         CI：--check + 两套测试
 ├── tools/                           维护工具（不随技能打包）
 │   ├── package_skill.py             结构校验 + 7 维质量报告 + 打包
-│   ├── test_plan.mjs                门禁测试（node --test）
+│   ├── test_plan.mjs                门禁与评审材料测试（node --test）
 │   ├── test_package.py              打包工具测试（stdlib unittest）
 │   └── eval/                        技能行为压力评估场景（RED-GREEN）
 ├── CHANGELOG.md                     版本变更记录
 └── AGENTS.md                        仓库维护约定
 ```
 
-打包**只包含** `SKILL.md`、`references/`、`scripts/`（以及存在时的 `assets/`）；不含 Git 元数据、维护工具（`tools/`）、日志或本机诊断文件。
+打包**只包含** `SKILL.md`、`references/`、`scripts/`（以及存在时的 `assets/`）里**后缀白名单**内的文件（文本与常见图片/图标）；`__pycache__`、`node_modules`、`dist` 等缓存目录跳过，日志/缓存/临时文件/压缩包与其他未知后缀**直接报错拒绝打包**，不会被静默带入或静默丢弃。这道边界按名称判定，不能识别所有凭据或诊断内容，提交前的人工差异审查仍然必须做。不含 Git 元数据、维护工具（`tools/`）、日志或本机诊断文件。
 
 ---
 
 ## 校验与打包
 
+本地提交前**始终**运行下面三条（AGENTS.md 指定的同一组；文档改动也要跑，脚本行为改动再加受影响验证）：
+
 ```bash
-# 校验（Python 3.10+，无第三方依赖）
+# 1. 结构校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
 # 输出含 skill_quality（7 维质量报告：contracts 校验 3 个文件的契约锚点，含 P0 保护规则；versions 校验 SKILL/CHANGELOG/README 版本一致）、internal_links 命中数，
-# 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）
+# 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）。
+# frontmatter 按仓库支持的简化 YAML 子集真解析：未闭合语法、流式集合、块标量、重复键、version 层级错误、
+# 未加引号的 version、非法转义、会歧义成布尔/null/数字的裸值一律 exit 1（能力范围见下方说明）。
 
-# 机器计划门禁测试
-node --test tools/test_plan.mjs   # 含结构门禁与账本门禁正/负例，以输出计数为准
+# 2. 门禁与评审材料测试
+node --test tools/test_plan.mjs
+# 结构门禁、账本门禁正/负例、修复预算状态转换（含最后一次合法修复保持 running）、
+# 评审材料完整性（提交/暂存/未暂存/未跟踪/删除/重命名、中文与空格路径、按层归属、
+# task/pre-existing/mixed/unknown、空与未声明范围、无 Git 与无提交指纹、快照身份校验）
 
-# 打包工具测试（stdlib，无第三方依赖）
+# 3. 打包工具测试（stdlib，无第三方依赖）
 python -B -m unittest discover -s tools -p "test_*.py"
+# 三件套自洽与 LF、发布资源边界（日志/缓存/压缩包被拒、合法资源保留）、frontmatter 语法负例
 
 # 以上三条在 CI 中自动执行（.github/workflows/ci.yml）
+```
 
-# 技能行为压力评估（大版本发布前；方法见 tools/eval/README.md；当前仓库尚无已存档结果）
-# RED：未注入技能的新会话跑场景记录基线违规；GREEN：注入当前版重跑对照
+`frontmatter` 只支持仓库自身使用的**简化 YAML 子集**，不是完整 YAML 解析：顶层 `key: value`、一层 2 空格嵌套、单行 plain / 单引号 / 双引号标量、整行 `#` 注释。不支持流式集合、块标量、锚点/别名、多行折叠、tab 与内联注释；plain 值若会被 YAML 读成布尔/null/数字必须加引号；双引号内只支持反斜杠、双引号、斜杠、n、t、r、b、f 这几种转义，单引号用两个单引号表示一个单引号；范围外写法一律拒绝，不做猜测性接受。
 
+技能行为压力评估（大版本发布前或改动 P0 规则后；方法见 [tools/eval/README.md](tools/eval/README.md)）：RED（未注入技能）与 GREEN（注入当前版）**两组都要跑**，RED 基线本就通过时同样要跑 GREEN 确认没有引入退化；原始记录放运行根，不入库。
+
+```bash
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
 # 缺失 → exit 2 + ledger:false + not_started；表头不连续/起点超出前 40 行/未在 15 行内写完 → exit 2 + ledger:false + 缺项名
 # 齐全 → exit 0 + ledger:true；用法错误 / 文件不存在 / 目录或不可读 / JSON 非法分别给出不同错误
 node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"
+
+# 评审材料：派发实现前记录基线，派发评审前生成材料（只读采集，不提交/不暂存/不重置）
+node "<skill>/scripts/review-material.mjs" snapshot --repo <repo> --out <runtime>/baseline-T-1-01.json --scope "src/**,test/**"
+node "<skill>/scripts/review-material.mjs" collect --repo <repo> --out <runtime>/material-T-1-01.md \
+  --snapshot <runtime>/baseline-T-1-01.json --label T-1-01
+# 覆盖 BASE..HEAD 提交、暂存、未暂存、未跟踪新增内容、删除与重命名；候选集 = 基线 ∪ 当前 Git 变化 ∪ 提交
+# 归属只有 task / pre-existing / mixed / unknown；任务前已有用户改动单列，不并入本任务
+# 快照记录 base=null 时按空树比较首次提交；ok 只表示命令成功，完整性另看 integrity.status
+# 快照仓库/模式/范围/BASE 不一致时拒绝采集；--out 必须在仓库外（含 ..name 目录与链接解析），不能覆盖基线
+# --scope "" 表示显式空范围（只读任务）；省略且无快照时按“未声明范围”列示
+# 无 Git 或无提交时用前后文件清单 + SHA-256 指纹；二进制/超限/读取失败标 incomplete
+# 同层其他文件的 diff 不掩盖单个文件的补充材料；无 Git 删除保留快照摘要（正文未保存时注明）
 
 # 生成发布包（不入 git，仅本地派生物；默认 packages/wish-dev-<ver>.zip）
 python -B tools/package_skill.py
@@ -148,20 +174,39 @@ python -B tools/package_skill.py
 
 脚本一次产出**三件套**：`wish-dev-<ver>.zip`、`wish-dev-<ver>.manifest.json`、`wish-dev-<ver>.zip.sha256`（不指定 `--output` 时默认放在 `packages/` 且带版本号）。
 
-发版顺序固定：**提交全部改动 → 重建 `v<ver>` tag → 推 main 与指定 tag → 创建 Release**；工作区有未提交改动、或 tag 落后于工作树时不得发版。
+## 发布（标签默认不可变）
+
+正常发版 = **新版本 + 新标签**。不使用 `git tag -f`，不默认重建既有版本标签，也不强推标签。
+
+1. 先核对当前分支、工作区、`SKILL.md` 版本，以及本地/远端同名标签：
 
 ```bash
-git add -A && git commit -m "release: v<ver>"
-git tag -fa v<ver> -m "wish-dev <ver>"
-git push origin main
-git ls-remote --tags origin v<ver>   # 已有同名 tag 时先确认覆盖策略
-git push origin refs/tags/v<ver>       # 被拒时确认覆盖：git push --force origin refs/tags/v<ver>
-gh release view v<ver> || true     # 可选核对：不存在则继续
-gh release create v<ver> --target main --notes-file <notes.md> \
-  packages/wish-dev-<ver>.zip \
-  packages/wish-dev-<ver>.manifest.json \
-  packages/wish-dev-<ver>.zip.sha256
+git status --short                                  # 必须为空
+git rev-parse --abbrev-ref HEAD                     # 预期 main
+git rev-parse HEAD                                  # 发布基线 commit
+git rev-parse --verify --quiet "refs/tags/v<ver>"   # 本地同名标签（无输出 = 不存在）
+git ls-remote --tags origin "refs/tags/v<ver>"      # 远端同名标签（无输出 = 不存在）
 ```
+
+2. 从已核对的源码基线生成并校验三件套（zip 成员清单、manifest 里的 sha256 与 sha256 文件一致、LF 行尾、不带本机绝对路径、不含临时内容）：
+
+```bash
+python -B tools/package_skill.py --output <runtime>/wish-dev-<ver>.zip
+```
+
+3. 同名标签已存在时：
+   - **目标相同**（`git rev-parse "v<ver>^{}"` 等于发布基线 commit）：走幂等核对——不重建标签，重新核对 Release 资产摘要与本地三件套一致即结束。
+   - **目标不同**：**停止发布**并报告冲突。不改标签、不强推、不复用该版本号；需要发版就提升版本号并另打新标签。
+
+4. 1–3 全部通过且用户授权后，打新标签并推送（不带 `--force`）：
+
+```bash
+git tag -a v<ver> -m "wish-dev <ver>"
+git push origin main
+git push origin refs/tags/v<ver>
+```
+
+5. 用已校验的三件套创建 Release。工作区有未提交改动、或标签落后于工作树时不得发版。
 
 git 树不保存任何 `packages/` 内容。
 
@@ -171,8 +216,8 @@ git 树不保存任何 `packages/` 内容。
 
 ## 后续维护
 
-1. 拉最新代码，修改 `SKILL.md` 或 `references/` 相应文件；按需 bump `SKILL.md` 的 `version`。
-2. 文档变更跑结构校验；脚本行为变更再跑 `node --test tools/test_plan.mjs`（check-plan.mjs）与 `python -B -m unittest discover -s tools -p "test_*.py"`（package_skill.py），并验证受影响行为。
+1. 拉最新代码，修改 `SKILL.md` 或 `references/` 相应文件；按需 bump `SKILL.md` 的 `version`，并同步 README「当前版本」与本文件 CHANGELOG 标题。
+2. 本地提交前**始终**运行 AGENTS.md 指定的三条检查（`python -B tools/package_skill.py --check`、`node --test tools/test_plan.mjs`、`python -B -m unittest discover -s tools -p "test_*.py"`）；脚本行为变化再补充受影响验证，改动 P0 规则或交付契约时按 [tools/eval/README.md](tools/eval/README.md) 跑行为评估。
 3. 审查完整差异，确认不含密钥、日志、缓存或临时文件。
 4. 用户授权后提交并推送；大改动或多人协作走 PR 审查。
 5. 需要安装包时从已核对源码重新打包；发版挂 GitHub Release。

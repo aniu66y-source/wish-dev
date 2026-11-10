@@ -11,6 +11,7 @@
 ~~~text
 task-id / project / runtime_root / original-wish / delivery-target / acceptance-scope
 requirement-version / design-version / contract-version / source-baseline
+base-commit / baseline-snapshot / review-material-path
 authorized-scope / forbidden-actions / assumptions / decisions / risks
 user-dirty-files / owned-files / phase / packages / dependencies
 acceptance-items / actual-checks / evidence-paths
@@ -21,7 +22,7 @@ attempts / no-progress-count / root-cause / same-cause-failures / resume-conditi
 last-change / concrete-next-action / blocker / handover-status
 ~~~
 
-包状态：pending / running / verifying / done / blocked，机器契约见 [plan-contract.md](plan-contract.md)。pending 只有依赖 done 才可领取，verifying 表示实现已返回、待验收；不要同时维护两套活跃状态。整体状态：active / needs-user / interrupted / ready-for-acceptance / delivered。`transport` 记录**执行通道**：`subagent`（子智能体）/ `subtask`（宿主无子智能体、仅支持隔离子任务时的降级通道）；前台/后台属于**运行模式**（记在任务备注并关联 `running-task-ids`），不塞进本字段；`team-teammate` 仅为历史兼容，本技能不使用。
+包状态：pending / running / verifying / done / blocked，机器契约见 [plan-contract.md](plan-contract.md)。pending 只有依赖 done 才可领取，verifying 表示实现已返回、待验收；不要同时维护两套活跃状态。整体状态：active / needs-user / interrupted / ready-for-acceptance / delivered。`transport` 记录**执行通道**：`subagent`（宿主子智能体）/ `subtask`（宿主提供的隔离子任务）。`subtask` 只有在能执行工具、拥有独立上下文、任务可追踪、可用于独立评审时才算等价通道；普通函数调用、共享上下文步骤或仅名字叫 subtask 的不算，见 [portability.md](portability.md) 能力前提。同步/异步属于**运行模式**（记在任务备注并关联 `running-task-ids`），不塞进本字段；`team-teammate` 仅为历史兼容，本技能不使用。
 
 阶段或包完成只更新该阶段/包；整体 delivered 由协调者对照完整交付目标决定。用户要求人工签收而尚未收到时，保持待签收，不能伪造确认；不需要签收的任务可以在证据完整后技术交工。CLI 返回码不决定整体状态。每轮返回后按 [continuation.md](continuation.md) 直接执行下一动作，不以进度汇报结束仍可执行的工作。
 
@@ -83,8 +84,8 @@ last-change / concrete-next-action / blocker / handover-status
 任务背景：为什么做、承接哪条线、相关 AC 编号。
 执行范围：允许触碰的模块/文件/接口边界。
 依赖：前置任务编号（T-1-03 等，与 prd.json 的 `stories[].id` 同一串）；无则写"无"。依赖未 done 不开始。
-允许写入文件：本任务可写的文件清单/通配（独占归属）。
-禁止写入：共享契约、锁文件、其他线文件（唯一写入人=集成线）。
+允许写入文件：本任务可写的产品文件清单/通配（独占归属，即 `allowed_files`）。
+禁止写入：共享契约、锁文件、依赖清单、迁移顺序及其他线文件（唯一写入人=集成线任务）；需求/设计/评审等正式产物与证据、临时输出的写入权限见 [plan-contract.md](plan-contract.md)「写入权限（三类）」。只读调查/设计任务写 `read_only: true`、`allowed_files: []`，并把要读的范围写成 `read_scope`（只读，不授予写权）。
 执行要求：沿用的统一模块/状态来源、结构清理边界、代码质量指引路径。
 限制条件：授权边界、费用、外部操作、凭据，不超范围。
 交付要求：具体产物、必要测试和集成材料。
@@ -93,7 +94,7 @@ last-change / concrete-next-action / blocker / handover-status
 ~~~
 
 **下发附加字段（主对话随块带上，不计入 12 项）：**
-- 运行模式：默认**前台**；**后台运行模式**只用于主对话此刻无可做本地工作、且任务预计耗时长的情形（构建、部署、长测试），派发后登记 task/会话 ID，用宿主的结果读取接口有界取回，不轮询、不猜结果；需要追问时用会话续做或前台重派并附上下文文件。
+- 运行模式：按宿主能力选择，不写死。宿主支持在一条消息里批量同步派生时，可对多条独立线并行同步调用；支持异步派生（后台任务）时，可把独立任务放异步通道并行推进，再用结果读取接口有界取回。小任务、强耦合或共享写入的任务串行，不为并行而并行。无论哪种模式都要登记准确 task/会话 ID、结果可追踪、未知写入不重复派发；需要追问时用会话续做或重新派发并附上下文文件。不写死并行个数、宿主工具名或等待时长。
 - 修复预算：默认 3 次；耗尽、连续 3 次无进展或 3 次同根因 → 回主对话标 `blocked`（计数按 [plan-contract.md](plan-contract.md) 持久保存）。
 - 子智能体 ID/会话 ID：派发后登记，续做用。
 - 模型档位：宿主支持指定子智能体模型时**显式选档，不省略**（省略通常继承会话最贵模型，静默推高成本）——机械实现（1–2 文件、规格完整）用低档；跨文件集成与排障用中档；架构设计、整体验收与独立评审用最高档；预算高于默认 3 次时，修复循环的后期轮次（第 4–5 轮及以后）至少比卡住的实现者升一档。按"总轮次成本"权衡：便宜模型多轮可能比中档模型更贵。
@@ -125,7 +126,7 @@ last-change / concrete-next-action / blocker / handover-status
 - **状态 4 态对齐账本**：`done`（已验收）/ `verifying`（实现已返回、待主对话验收）/ `blocked`（修复预算耗尽或外部条件缺，附恢复条件）/ `partial`（部分完成，列未完成事项）。不另造"已完成/未完成"口语态。
 - **`partial` 的账本映射**：账本状态仍是上方五态之一，不新增机器状态——仍有未完成工作则保持 `running`/`verifying`，需重领实现则回 `pending`；未完成事项与原因记入 `progress.md`，主对话核对应记哪态后更新。
 - `done` 须附非空证据路径 + 独立评审（另派新实例、不复用实现者会话）的 spec/quality 通过；只读提示词不等于系统隔离。
-- **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + 差异文件——有 Git 时在派发实现前记录 BASE commit，评审前用 `git diff <BASE>..HEAD > <runtime>/diff-T-x-y.md` 生成（多提交任务不得只看 HEAD~1）；无 Git 时用文件指纹清单。差异同样落文件不贴正文；无差异凭据不派评审，评审者不空评。
+- **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + **评审材料**。派发实现前记录基线（`BASE`、HEAD/索引/工作区/未跟踪各层摘要、写入范围），用 `node "<skill>/scripts/review-material.mjs" snapshot --repo <repo> --out <runtime>/baseline-T-x-y.json --scope "<allowed_files>"`；评审前用同一脚本 `collect` 生成材料，覆盖 `BASE..HEAD` 提交、暂存、未暂存、未跟踪新增、删除与重命名，按层判定归属（task / pre-existing / mixed / unknown），任务前已有用户改动不并入本任务交付。只比较 `git diff <BASE>..HEAD` 会漏掉未提交实现，不能作为完整材料。无 Git 或无提交时用前后文件清单 + SHA-256 指纹。材料落文件不贴正文；材料为空且无其他产物/证据时不得派评审，评审者不空评。`collect` 会校验快照仓库/模式/范围/`BASE` 身份，输出必须落在仓库外。规则与限制见 [plan-contract.md](plan-contract.md)「评审材料与基线」。
 - **证据路径两套写法**：交付块里写**绝对路径**方便主对话抽查；写进 `prd.json` 的 `evidence` 必须是愿望目录下的**相对路径**（`evidence/…`），两者不要混用。
 - 主对话读交付块后**抽查证据文件**再更新账本；子智能体回报不自动等于事实。
 - 下发单个任务时仅回传该任务状态及证据，不让子智能体自行判定整体交工。

@@ -79,5 +79,144 @@ class FrontmatterPositionTest(unittest.TestCase):
         self.assertEqual(dims["crossPlatform"], "WEAK")
 
 
+class PublishBoundaryTest(unittest.TestCase):
+    """Logs, caches, archives and unknown types must never be packaged."""
+
+    def with_root(self, files):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        for name, body in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8", newline="\n")
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return root
+
+    def packaged(self, files):
+        root = self.with_root(files)
+        return sorted(path.relative_to(root).as_posix() for path in skill.resources())
+
+    def test_log_file_blocks_packaging(self):
+        with self.assertRaises(ValueError) as caught:
+            self.packaged({"SKILL.md": "x", "references/guide.md": "x",
+                           "references/debug.log": "x"})
+        self.assertIn("references/debug.log", str(caught.exception))
+
+    def test_archive_and_unknown_types_are_blocked(self):
+        with self.assertRaises(ValueError) as caught:
+            self.packaged({"SKILL.md": "x", "references/old.zip": "x",
+                           "references/raw.dat": "x"})
+        message = str(caught.exception)
+        self.assertIn("references/old.zip", message)
+        self.assertIn("references/raw.dat", message)
+
+    def test_cache_directories_are_ignored_and_assets_kept(self):
+        files = {
+            "SKILL.md": "x",
+            "references/guide.md": "x",
+            "scripts/run.mjs": "x",
+            "assets/logo.png": "x",
+            "references/__pycache__/cached.cpython-313.pyc": "x",
+            "scripts/.hidden": "x",
+        }
+        self.assertEqual(self.packaged(files),
+                         ["SKILL.md", "assets/logo.png", "references/guide.md", "scripts/run.mjs"])
+
+
+class FrontmatterSyntaxTest(unittest.TestCase):
+    """A missing field must not pass just because a few regexes still match."""
+
+    HEAD = ('---\nname: wish-dev\ndescription: 用于测试的前置元数据\n'
+            'license: "Proprietary"\ncompatibility: "host"\nmetadata:\n  version: "1.0.0"\n')
+
+    def manifest_root(self, body):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "SKILL.md").write_text(body, encoding="utf-8", newline="\n")
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return root
+
+    def validated(self, body):
+        root = self.manifest_root(body)
+        return skill.validate([root / "SKILL.md"])
+
+    def test_supported_frontmatter_is_accepted(self):
+        result = self.validated(self.HEAD + "---\n\n# skill\n")
+        self.assertEqual(result["name"], "wish-dev")
+        self.assertEqual(result["version"], "1.0.0")
+
+    def test_unclosed_flow_collection_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated(self.HEAD + "broken: [\n---\n")
+        self.assertIn("unsupported YAML syntax", str(caught.exception))
+
+    def test_duplicate_name_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated('---\nname: wish-dev\nname: wish-dev\ndescription: y\n'
+                           'metadata:\n  version: "1.0.0"\n---\n')
+        self.assertIn("duplicate key", str(caught.exception))
+
+    def test_duplicate_version_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated('---\nname: wish-dev\ndescription: y\nmetadata:\n'
+                           '  version: "1.0.0"\n  version: "1.0.1"\n---\n')
+        self.assertIn("duplicate key", str(caught.exception))
+
+    def test_version_must_be_nested_under_metadata(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated('---\nname: wish-dev\ndescription: y\nversion: "1.0.0"\n'
+                           'metadata:\n  language: zh\n---\n')
+        self.assertIn("nested under metadata", str(caught.exception))
+
+    def test_unquoted_version_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated('---\nname: wish-dev\ndescription: y\nmetadata:\n'
+                           '  version: 1.0.0\n---\n')
+        self.assertIn("must be quoted", str(caught.exception))
+
+    def test_unclosed_quote_and_tab_are_rejected(self):
+        with self.assertRaises(ValueError):
+            self.validated(self.HEAD + 'broken: "oops\n---\n')
+        with self.assertRaises(ValueError):
+            self.validated('---\nname: wish-dev\ndescription:\ty\n---\n')
+
+
+    def test_ambiguous_plain_scalars_are_rejected(self):
+        for value in ('hello: world', '- item', 'true', 'null', '123', '1.5', '~', '#comment'):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self.validated('---\nname: wish-dev\ndescription: ' + value
+                                   + '\nmetadata:\n  version: "1.0.0"\n---\n')
+
+    def test_unknown_escape_in_double_quotes_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated('---\nname: wish-dev\ndescription: "bad\\q"\n'
+                           'metadata:\n  version: "1.0.0"\n---\n')
+        self.assertIn('escape', str(caught.exception).lower())
+
+    def test_dangling_escape_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.validated('---\nname: wish-dev\ndescription: "ends with \\"\n'
+                           'metadata:\n  version: "1.0.0"\n---\n')
+
+    def test_quoted_values_with_colons_and_escapes_are_accepted(self):
+        for value in ('"hello: world"', '"line\\nbreak"', "'it''s fine'", "'a: b'"):
+            with self.subTest(value=value):
+                result = self.validated('---\nname: wish-dev\ndescription: ' + value
+                                        + '\nmetadata:\n  version: "1.0.0"\n---\n')
+                self.assertEqual(result['name'], 'wish-dev')
+
+    def test_typed_plain_version_is_rejected_as_ambiguous(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validated('---\nname: wish-dev\ndescription: y\nmetadata:\n  version: true\n---\n')
+        self.assertIn('non-string YAML type', str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
