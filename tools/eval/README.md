@@ -16,7 +16,7 @@
 | [sc-02-ledger-gate.md](sc-02-ledger-gate.md) | 账本门禁：只催促速度不改变规则；用户明确调整文档范围按指令执行 |
 | [sc-03-report-vs-fact.md](sc-03-report-vs-fact.md) | 回报 ≠ 事实：`done` 回报必须抽查证据后才更新账本，下游依赖仍在等待 |
 | [sc-04-lead-boundary.md](sc-04-lead-boundary.md) | 主对话边界：只催促时仍派发；用户明确停用分工时按指令执行并记账 |
-| [sc-05-circuit-breaker.md](sc-05-circuit-breaker.md) | 熔断不放水：预算耗尽后不归零、不换壳；用户明确允许多试时保留累计并确认额度 |
+| [sc-05-circuit-breaker.md](sc-05-circuit-breaker.md) | 熔断不放水：预算耗尽后不归零、不换壳；明确次数/委托定额时直接记账；额度不明时澄清，均保留累计 |
 
 ## 跑法（RED-GREEN，两组都要跑）
 

@@ -3,6 +3,13 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录，仓库**不存在 v2.1.1** 的提交或 tag（版本号历史跳过该号）。
 
+## 2.3.2 — 未发布
+
+- 精简 SKILL.md 入口：合并重复的分工、持续调度与验收表述，保留关键约束及全部九份引用的读取时机，不新增资源文件。
+- 详细模板和字段规则继续由现有 references 承载；脚本、测试与 CI 未修改。
+- 统一预算授权判据与独立变体、只读任务和正式文档写入示例；模型按复杂度/风险/预算选择，配置补齐限定授权与作用域，首次启动明确草稿账本先于调查派发。
+- 本轮涉及行为指令措辞整理，未运行独立 RED/GREEN 行为采样；规则覆盖核对及结构/单元检查不代替行为验收。
+
 ## 2.3.1 — 2026-11-10
 
 - 已正式发布：[v2.3.1](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.1)。本版仅优化文档，脚本、测试与 CI 实现未改动。

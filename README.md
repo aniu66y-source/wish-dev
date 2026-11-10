@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.1**，文档维护版）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.2**，入口精简，尚未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.1](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.1)，发布于 2026-11-10；本版仅优化文档，脚本、测试与 CI 未改动。上一版 [2.3.0](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.0)
@@ -90,11 +90,11 @@
 | 原则 | 说明 |
 |---|---|
 | **宿主子智能体执行** | 调查/实现/测试/部署/评审全部下发宿主独立执行体；主对话只做规划/分派/验收，直接动手仅限白名单（账本/证据落盘、门禁脚本、评审材料采集、能力探测、收尾清理）；同步并行或异步派生按宿主能力选择，不写死并行度，不用团队队友 |
-| **写入权限三类** | 产品文件（`allowed_files`，只读任务用 `read_only` + 空数组）、正式产物（需求/设计/评审报告）、证据与临时输出（运行根/`evidence/`）分别授权；共享契约/锁文件只由集成线写 |
+| **写入权限三类** | 源码及正式文档（`allowed_files`，只读任务用 `read_only` + 空数组）、正式产物（需求/设计/评审报告）、证据与临时输出（运行根/`evidence/`）分别授权；共享契约/锁文件只由集成线写 |
 | **评审材料完整** | 评审输入覆盖 `BASE..HEAD` 提交、暂存、未暂存、未跟踪新增、删除与重命名，按 HEAD/索引/工作区/未跟踪各层分别比对归属，单列任务前已有用户改动，混合变化保留材料供核对；只比较提交会漏掉未提交实现 |
 | **多线并行 + 任务编号** | 规划时分离模块多线并行，每线 `T-<线>-<序号>`；账本 `stories[].id`、下发块、`depends_on` 同号，避免交接漂移；不写死包数与并行度 |
 | **修根因** | 先定位错误结构，不在错误结构上堆补丁/补偿分支/新旧竞争方案 |
-| **敏感凭据隔离** | 模型非敏感配置自动补齐不停；仅 API key 值交用户设 `{env:VAR}` |
+| **敏感凭据隔离** | 已授权的项目级非敏感配置按需补齐；密钥使用宿主支持的安全引用，涉及全局/账号/费用变化核对授权 |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
 | **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须为连续块：开头 40 行内开始、15 行内写完）；`check-plan.mjs` 缺账本或表头不成立即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
 | **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions）；质量维度只报告不阻断，但 frontmatter、内部链接、JS 语法或 CRLF 行尾错误仍会 exit 1 |
