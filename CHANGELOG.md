@@ -15,8 +15,10 @@
 - **修复预算措辞**：`SKILL.md` 与 `workflow.md` 的「默认 3 次」补明须写进 `budget.max_fix_attempts`（字段必填、无内置兜底），避免读成字段可省略。
 - **代码整理**：`baselineView` / `renderView` 移到 `return` 之前；`indexOnly` 更名为 `indexDifferenceOnly`；`renderable` 不再重复 `addChange` 已有的 pre-existing 丢弃条件。
 - **并入原 2.3.2（SKILL.md 入口精简）**：合并重复的分工、持续调度与验收表述，保留关键约束及全部九份引用的读取时机，不新增资源文件；详细模板与字段规则继续由现有 references 承载，脚本、测试与 CI 未修改；统一预算授权判据与独立变体、只读任务和正式文档写入示例，模型按复杂度/风险/预算选择，配置补齐限定授权与作用域，首次启动明确草稿账本先于调查派发。
-- **测试**：新增 3 项（未声明范围展开内容且不写空态、已声明范围的范围外写入只提示不并入、只读任务越界写入展示证据），`review material without a snapshot` 增加 `incomplete` 断言；累计 111 项 Node 测试、19 项 Python 测试。
-- **验证**：`package_skill.py --check` PASS（12 文件、43 链接、2 个 .mjs）；`node --test tools/test_plan.mjs` 111 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；隔离运行根打包产出 12 成员三件套，成员无 CRLF、manifest 无本机路径。本次为脚本与文档修订，未运行 RED/GREEN 行为采样（脚本行为变化不改变模型行为指引，但仍不宣称行为验收通过）。
+- **复审补齐同一类遗漏**：无 Git 模式第 3 节与第 6 节（任务前已有改动）此前仍写「（无修改…）」「（无）」，即使该层存在被范围排除的记录；现与其余分节同一口径，并注明提示中的计数是该层条数（第 7 节按层汇总，同一文件可能占多行）。删除节改为按文件去重计数，重命名会同时在索引与工作区留下删除记录，按记录数会虚增文件数。未变化的任务前记录在第 7 节只列指纹与「本次未变化」，不再展开正文冒充任务内容。
+- **修复基线重命名缺陷（复审发现，影响归属正确性）**：`snapshot` 只为 `git status` 报出的路径记录基线，而 rename/copy 只报新路径；旧路径既不在索引也不在工作区，却仍能从提交树读到内容，于是收集端把它判成 `tracked` 并把**用户任务前已暂存的重命名**算作任务删除。实测：暂存重命名后拍快照、之后不做任何事，材料仍声称任务删除了该文件并附 diff。现快照为 rename/copy 的旧路径补记基线（索引/HEAD/工作区三态），该场景 `task` 为空、删除归 `pre-existing`；任务期间的重命名仍正确归 `task`。
+- **测试**：新增 7 项（未声明范围展开内容且不写空态、已声明范围的范围外写入只提示不并入、只读任务越界写入展示证据、无 Git 未声明范围第 3 节、任务前改动不写成「无」且不展开正文、快照前已暂存的重命名归用户、只读任务的删除按文件计数），`review material without a snapshot` 增加 `incomplete` 断言；累计 115 项 Node 测试、19 项 Python 测试。
+- **验证**：`package_skill.py --check` PASS（12 文件、43 链接、2 个 .mjs）；`node --test tools/test_plan.mjs` 115 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；隔离运行根打包产出 12 成员三件套，成员无 CRLF、manifest 无本机路径。本次为脚本与文档修订，未运行 RED/GREEN 行为采样（脚本行为变化不改变模型行为指引，但仍不宣称行为验收通过）。
 
 ## 2.3.1 — 2026-11-10
 

@@ -695,6 +695,97 @@ test('a read-only task that wrote product files exposes them as not delivered',t
   }
 });
 
+test('without Git an unspecified scope still reports the change in section 3',t=>{
+  const dir=fs.mkdtempSync(path.join(workRoot(),'review-nogit-'));
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-snap.json');
+  const out=path.join(workRoot(),tag+'-m.md');
+  try{
+    fs.writeFileSync(path.join(dir,'a.txt'),'v1\n');
+    runTool(['snapshot','--repo',dir,'--out',snap]);
+    fs.writeFileSync(path.join(dir,'a.txt'),'v2\n');
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.equal(data.mode,'snapshot');
+    assert.equal(data.scope_mode,'unspecified');
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(!material.includes('（无修改；新增见第 4 节，删除见第 5 节）'),'a changed file must not be reported as no modification');
+    assert.ok(material.includes('该层另有 1 项范围外/未声明范围变化'));
+    assert.ok(material.includes('v2'),'the changed body must stay visible');
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
+});
+
+test('an unspecified scope keeps task-start changes out of none and out of task content',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,write}=makeRepo();
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-pre-snap.json');
+  const out=path.join(workRoot(),tag+'-pre.md');
+  try{
+    write('src/userdirty.js','const dirty=1\n');
+    runTool(['snapshot','--repo',dir,'--out',snap]);
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.equal(data.scope_mode,'unspecified');
+    const material=fs.readFileSync(out,'utf8');
+    const section6=material.split('## 6.')[1].split('## 7.')[0];
+    assert.ok(!section6.includes('（无）'),'task-start changes exist even when the scope cannot attribute them');
+    assert.ok(section6.includes('第 7 节列有'),'section 6 must point at the unscoped records');
+    assert.ok(!material.includes('const dirty=1'),'an untouched task-start body is not task content');
+    assert.ok(material.includes('任务开始时已是该内容，本次未变化'));
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
+});
+
+test('a rename staged before the snapshot is attributed to the user, not the task',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,git}=makeRepo();
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-mv-snap.json');
+  const out=path.join(workRoot(),tag+'-mv.md');
+  try{
+    // The user renamed a file and staged it before the task started.
+    git('mv','src/a.js','src/a-renamed.js');
+    runTool(['snapshot','--repo',dir,'--out',snap,'--scope','src/**']);
+    // The task does nothing after the snapshot.
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.deepEqual(data.task,[],'nothing was delivered after the snapshot');
+    assert.deepEqual(data.pre_existing.filter(entry=>entry.layer==='baseline').map(entry=>entry.file).sort(),
+      ['src/a-renamed.js','src/a.js'],'the pre-existing rename belongs to the user');
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(material.includes('（无暂存变化）'),'a pre-existing rename is not a task change');
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
+});
+
+test('a read-only task that deleted and renamed files counts files, not layer records',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,git}=makeRepo();
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-ro-snap.json');
+  const out=path.join(workRoot(),tag+'-ro.md');
+  try{
+    runTool(['snapshot','--repo',dir,'--out',snap,'--scope','']);
+    fs.rmSync(path.join(dir,'src','keep.js'));
+    git('mv','src/a.js','src/a-moved.js');
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.equal(data.scope_mode,'empty');
+    const material=fs.readFileSync(out,'utf8');
+    // Two files were deleted at their old paths (a.js via rename, keep.js outright); the layer
+    // records are three. The summary must not inflate the count.
+    assert.ok(material.includes('另有 2 个文件的范围外/未声明范围删除'),'count distinct files, not records');
+    assert.ok(material.includes('显式空范围'));
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
+});
+
 test('without Git the material shows before/after fingerprints and current content', () => {
   const dir = fs.mkdtempSync(path.join(workRoot(), 'nogit-'));
   const snap = path.join(workRoot(), path.basename(dir) + '-snap.json');

@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.3**，评审材料口径修正并精简 SKILL.md 入口（原 2.3.2），尚未发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.3**，评审材料口径修正并精简 SKILL.md 入口（原 2.3.2）、补齐基线重命名归属修复，尚未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.1](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.1)，发布于 2026-11-10；本版仅优化文档，脚本、测试与 CI 未改动。上一版 [2.3.0](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.0)

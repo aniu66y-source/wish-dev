@@ -445,6 +445,16 @@ function snapshot(repo, options) {
         head: tree.get(entry.file) ?? (base ? resolveBlob(root, base, entry.file) : null),
         worktree: fingerprintFile(path.join(root, entry.file)),
       };
+      // A rename/copy reports only the new path. The old path is already absent from the
+      // index and worktree at snapshot time, so without its own record collect would read the
+      // old path back from the commit tree and charge the user's deletion to the task.
+      if (entry.from && !Object.hasOwn(state.dirty, entry.from)) {
+        state.dirty[entry.from] = {
+          index: index.get(entry.from) ?? null,
+          head: tree.get(entry.from) ?? (base ? resolveBlob(root, base, entry.from) : null),
+          worktree: fingerprintFile(path.join(root, entry.from)),
+        };
+      }
     }
   } else {
     state.files = manifest(root, {skipGit: true});
@@ -874,7 +884,12 @@ function collect(repo, options) {
   }
 
   const renderNote = entry => {
-    if (entry.attribution === 'pre-existing') return `> ${entry.file}：内容与任务开始时一致，仅${layerLabel[entry.layer]}状态变化，不计入本任务实现内容。`;
+    if (entry.attribution === 'pre-existing') {
+      // A baseline record is the user's task-start content, so "only changed its state" would
+      // be wrong there: nothing about the file changed during the task.
+      if (entry.layer === 'baseline') return `> ${entry.file}：任务开始时已是该内容，本次未变化，不计入本任务实现内容。`;
+      return `> ${entry.file}：内容与任务开始时一致，仅${layerLabel[entry.layer]}状态变化，不计入本任务实现内容。`;
+    }
     if (entry.attribution === 'mixed') return `> ${entry.file}：任务开始时已有改动，当前内容与任务开始时不同（mixed），须协调者核对归属。`;
     if (entry.attribution === 'unknown') return `> ${entry.file}：归属无法证实（${entry.note ?? '缺少基线'}），差异保留供评审。`;
     return '';
@@ -919,7 +934,7 @@ function collect(repo, options) {
     lines.push(title, '');
     if (!entries.length) {
       lines.push(outside
-        ? `（本任务范围内无${layerLabel[layer]}变化；另有 ${outside} 项范围外/未声明范围变化，见第 7 节）`
+        ? `（本任务范围内无${layerLabel[layer]}变化；该层另有 ${outside} 项范围外/未声明范围变化，见第 7 节）`
         : empty, '');
       return;
     }
@@ -950,7 +965,12 @@ function collect(repo, options) {
   } else {
     const entries = changes.filter(entry => entry.scope === 'in' && entry.layer === 'worktree' && entry.kind !== 'deleted');
     lines.push('## 3. 文件变化（无 Git：前后指纹 + 当前内容）', '');
-    if (!entries.length) lines.push('（无修改；新增见第 4 节，删除见第 5 节）', '');
+    if (!entries.length) {
+      const outsideWorktree = outsideIn('worktree');
+      lines.push(outsideWorktree
+        ? `（本任务范围内无修改；该层另有 ${outsideWorktree} 项范围外/未声明范围变化，见第 7 节；新增见第 4 节，删除见第 5 节）`
+        : '（无修改；新增见第 4 节，删除见第 5 节）', '');
+    }
     for (const entry of entries) {
       const before = state?.files?.[entry.file] ?? null;
       lines.push(`### ${entry.file}（${entry.kind === 'deleted' ? '已删除' : '修改'}）`, '');
@@ -966,7 +986,7 @@ function collect(repo, options) {
   if (!untracked.length) {
     const outsideUntracked = outsideIn('untracked');
     lines.push(outsideUntracked
-      ? `（本任务范围内无未跟踪新增；另有 ${outsideUntracked} 项范围外/未声明范围变化，见第 7 节）`
+      ? `（本任务范围内无未跟踪新增；该层另有 ${outsideUntracked} 项范围外/未声明范围变化，见第 7 节）`
       : '（无未跟踪文件）', '');
   }
   for (const entry of untracked) {
@@ -979,9 +999,12 @@ function collect(repo, options) {
   lines.push('## 5. 删除的文件', '');
   const deletions = changes.filter(entry => entry.kind === 'deleted' && inScope(entry));
   if (!deletions.length) {
-    const outsideDeletions = changes.filter(entry => entry.kind === 'deleted' && !inScope(entry)).length;
-    lines.push(outsideDeletions
-      ? `（本任务范围内无删除；另有 ${outsideDeletions} 项范围外/未声明范围的删除，见第 7 节）`
+    // Deletions span layers (a rename leaves both an index and a worktree record), so counting
+    // records would overstate the files a reviewer has to look at.
+    const outsideDeleted = changes.filter(entry => entry.kind === 'deleted' && !inScope(entry));
+    const outsideFiles = new Set(outsideDeleted.map(entry => entry.file)).size;
+    lines.push(outsideFiles
+      ? `（本任务范围内无删除；另有 ${outsideFiles} 个文件的范围外/未声明范围删除，见第 7 节）`
       : '（无删除）', '');
   }
   for (const entry of deletions) {
@@ -1022,7 +1045,14 @@ function collect(repo, options) {
   const pre = changes.filter(entry => inScope(entry) && entry.attribution === 'pre-existing');
   const mixed = changes.filter(entry => inScope(entry) && entry.attribution === 'mixed');
   const unknown = changes.filter(entry => inScope(entry) && entry.attribution === 'unknown');
-  if (!pre.length && !mixed.length && !unknown.length) lines.push('（无）', '');
+  if (!pre.length && !mixed.length && !unknown.length) {
+    // With an empty or unspecified scope nothing can be attributed, so a bare "none" would be
+    // a false statement whenever the user did have task-start changes.
+    const outsidePre = changes.filter(entry => !inScope(entry) && entry.attribution === 'pre-existing').length;
+    lines.push(scope.mode === 'declared' || outsidePre === 0
+      ? '（无）'
+      : `（未声明或空范围内无法按范围归属任务前改动；第 7 节列有 ${outsidePre} 项范围外/未声明范围记录）`, '');
+  }
   for (const entry of pre) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}）：${entry.layer === 'baseline' ? '任务开始时已改动，本次未变化' : '内容一致或仅位置变化'}；不计入本任务实现内容。`);
   for (const entry of mixed) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}）：${entry.note ?? '内容混合'}；须协调者核对。`);
   for (const entry of unknown) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}）：${entry.note ?? '归属无法证实'}。`);
@@ -1048,6 +1078,12 @@ function collect(repo, options) {
       }
       lines.push(`- 当前指纹：${fingerprintSummary(entry.view.fingerprint)}`, '');
       if (entry.note) lines.push(renderNote(entry));
+      // An unchanged record is the user's task-start content: show what it is, but do not
+      // expand a body that the task never touched.
+      if (entry.kind === 'unchanged') {
+        lines.push('');
+        continue;
+      }
       lines.push(...renderView(entry));
       lines.push('');
     }
