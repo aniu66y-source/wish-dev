@@ -4,7 +4,7 @@ description: 用于用户提出软件开发愿望、要求许愿式开发或续�
 license: "Proprietary"
 compatibility: "宿主 agent 软件需能派生出拥有独立执行上下文的执行体（子智能体或等价隔离子任务）；当前模型支持工具调用"
 metadata:
-  version: "2.3.2"
+  version: "2.3.3"
   language: "zh-CN"
   runtime: "宿主支持工具调用且能派生独立执行体（子智能体或等价隔离子任务）；Node 18+ 用于 plan 门禁与评审材料采集"
   tags: "development, orchestration, subagents, spec-driven, code-quality"
@@ -81,7 +81,7 @@ metadata:
 
 每轮及上下文将满前落盘交付目标、需求/设计/契约版本、源码基线、授权、任务/会话 ID、状态、实际检查、运行写入、部署入口、下一动作和阻塞；用户变更时同步受影响范围。恢复核对文件、Git、进程和证据，避免重复写入或发布。
 
-卡点涉及版本/API 不明、解释不清的错误、合理修复仍失败或临时绕过时，主动查官方文档和上游 Issue/PR，核对版本、根因与风险，再做有界验证。每任务修复预算默认 3 次，实际授权优先；`attempts` 计已发起修复，首次实现和轮询不计。最后一次合法修复可保持 `running`，返回后 `verifying`，通过 `done`、失败 `blocked`；`pending` 达上限不得再派，超上限任何状态拒绝。
+卡点涉及版本/API 不明、解释不清的错误、合理修复仍失败或临时绕过时，主动查官方文档和上游 Issue/PR，核对版本、根因与风险，再做有界验证。每任务修复预算默认 3 次（该次数要显式写进 `budget.max_fix_attempts`，字段必填、无内置兜底），实际授权优先；`attempts` 计已发起修复，首次实现和轮询不计。最后一次合法修复可保持 `running`，返回后 `verifying`，通过 `done`、失败 `blocked`；`pending` 达上限不得再派，超上限任何状态拒绝。
 
 持久保存 `attempts`、`no_progress_count`、`same_cause_failures`；预算耗尽仍失败、连续 3 次无进展或已确认同根因失败则阻塞该线，继续独立工作。换会话/任务不归零，不减少次数、弱化验收或另建最终修复轮逃避预算；计数与恢复按计划契约核对。权限/渠道拒绝不通过伪装客户端绕过。
 

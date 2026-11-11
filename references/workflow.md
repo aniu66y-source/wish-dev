@@ -95,7 +95,7 @@ last-change / concrete-next-action / blocker / handover-status
 
 **下发附加字段（主对话随块带上，不计入 12 项）：**
 - 运行模式：按宿主能力选择，不写死。宿主支持在一条消息里批量同步派生时，可对多条独立线并行同步调用；支持异步派生（后台任务）时，可把独立任务放异步通道并行推进，再用结果读取接口有界取回。小任务、强耦合或共享写入的任务串行，不为并行而并行。无论哪种模式都要登记准确 task/会话 ID、结果可追踪、未知写入不重复派发；需要追问时用会话续做或重新派发并附上下文文件。不写死并行个数、宿主工具名或等待时长。
-- 修复预算：默认 3 次；耗尽、连续 3 次无进展或 3 次同根因 → 回主对话标 `blocked`（计数按 [plan-contract.md](plan-contract.md) 持久保存）。
+- 修复预算：默认 3 次（写进 `budget.max_fix_attempts`，字段必填、无内置兜底）；耗尽、连续 3 次无进展或 3 次同根因 → 回主对话标 `blocked`（计数按 [plan-contract.md](plan-contract.md) 持久保存）。
 - 子智能体 ID/会话 ID：派发后登记，续做用。
 - 模型档位：遵守宿主能力、项目规则与用户预算；允许选模型时，按任务复杂度、风险和实际表现选择。规格明确的机械工作可选较低成本模型，复杂架构与高风险评审优先能力更强的可用模型，不要求所有评审使用最高档。省略参数时的继承行为以实际宿主为准，不假定继承最贵模型。修复停滞先查根因；有模型能力不足的证据才考虑升档，权限、环境或需求错误不靠升档解决，超预算须先取得授权。
 - 大块工件走文件：完整任务书、接口细节或长上下文落运行目录文件，下发块只带**绝对路径 + 一行说明**，不把整段内容贴进派发 prompt；后续派发不层层累积历史任务摘要——子智能体需要的是本任务、相邻接口与全局约束，不是会话编年史。
@@ -126,7 +126,7 @@ last-change / concrete-next-action / blocker / handover-status
 - **交付块状态与账本映射**：`done`（已验收）/ `verifying`（实现已返回、待主对话验收）/ `blocked`（修复预算耗尽或外部条件缺，附恢复条件）/ `partial`（部分完成，列未完成事项）。不另造"已完成/未完成"口语态。
 - **`partial` 的账本映射**：账本状态仍是上方五态之一，不新增机器状态——仍有未完成工作则保持 `running`/`verifying`，需重领实现则回 `pending`；未完成事项与原因记入 `progress.md`，主对话核对应记哪态后更新。
 - `done` 须附非空证据路径 + 独立评审（另派新实例、不复用实现者会话）的 spec/quality 通过；只读提示词不等于系统隔离。
-- **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + **评审材料**。派发实现前记录基线（`BASE`、HEAD/索引/工作区/未跟踪各层摘要、写入范围），用 `node "<skill>/scripts/review-material.mjs" snapshot --repo "<repo>" --out "<runtime>/baseline-T-x-y.json" --scope "src/**,test/**"`；其中路径与 scope 替换为本任务实际值，scope 用逗号分隔字符串而非 `allowed_files` JSON 数组；评审前用同一脚本 `collect --snapshot "<runtime>/baseline-T-x-y.json"` 并提供实际 `--repo` / `--out` 生成材料，覆盖 `BASE..HEAD` 提交、暂存、未暂存、未跟踪新增、删除与重命名，按层判定归属（task / pre-existing / mixed / unknown），任务前已有用户改动不并入本任务交付。只比较 `git diff <BASE>..HEAD` 会漏掉未提交实现，不能作为完整材料。无 Git 或无提交时用前后文件清单 + SHA-256 指纹。材料落文件不贴正文；材料为空且无其他产物/证据时不得派评审，评审者不空评。`collect` 会校验快照仓库/模式/范围/`BASE` 身份，输出必须落在仓库外。规则与限制见 [plan-contract.md](plan-contract.md)「评审材料与基线」。
+- **独立评审的输入走文件**：评审子智能体拿到的是任务下发块 + 交付块 + **评审材料**。派发实现前记录基线（`BASE`、HEAD/索引/工作区/未跟踪各层摘要、写入范围），用 `node "<skill>/scripts/review-material.mjs" snapshot --repo "<repo>" --out "<runtime>/baseline-T-x-y.json" --scope "src/**,test/**"`，其中路径与 scope 替换为本任务实际值，scope 用逗号分隔字符串而非 `allowed_files` JSON 数组；评审前用同一脚本 `collect --snapshot "<runtime>/baseline-T-x-y.json" --repo "<repo>" --out "<runtime>/material-T-x-y.md"` 生成材料。材料落文件不贴正文；材料为空且无其他产物/证据时不得派评审，评审者不空评。覆盖哪些层、如何按层归属、范围语义、完整性口径与输出路径边界一律见 [plan-contract.md](plan-contract.md)「评审材料与基线」，此处不重复表述。
 - **证据路径两套写法**：交付块里写**绝对路径**方便主对话抽查；写进 `prd.json` 的 `evidence` 必须是愿望目录下的**相对路径**（`evidence/…`），两者不要混用。
 - 主对话读交付块后**抽查证据文件**再更新账本；子智能体回报不自动等于事实。
 - 下发单个任务时仅回传该任务状态及证据，不让子智能体自行判定整体交工。

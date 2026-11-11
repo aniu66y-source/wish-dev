@@ -403,8 +403,11 @@ test('review material without a snapshot flags the attribution gap',t=>{
     assert.equal(result.status,0,result.stdout);
     const data=JSON.parse(result.stdout);
     assert.equal(data.snapshot_used,false);
+    assert.equal(data.integrity.status,'incomplete','without a baseline the attribution cannot be verified');
     assert.ok(data.notes.some(note=>note.includes('未提供基线快照')));
-    assert.ok(fs.readFileSync(out,'utf8').includes('未提供'));
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(material.includes('未提供'));
+    assert.ok(material.includes('- 完整性：incomplete'),'the header must not claim a complete material');
   }finally{fs.rmSync(dir,{recursive:true,force:true});fs.rmSync(out,{force:true});}
 });
 
@@ -627,6 +630,69 @@ test('an explicit empty scope claims nothing while an unspecified scope is repor
     assert.ok(unspecified.unscoped.length > 0);
     assert.ok(materialOf(out2).includes('未声明写入范围'));
   } finally { wipe(dir, snap, out, snap2, out2); }
+});
+
+test('an unspecified scope shows the content instead of claiming no change',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,write}=makeRepo();
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-unspec-snap.json');
+  const out=path.join(workRoot(),tag+'-unspec.md');
+  try{
+    runTool(['snapshot','--repo',dir,'--out',snap]);
+    write('src/a.js','const a=9\n');
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.equal(data.scope_mode,'unspecified');
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(!material.includes('（无未暂存变化）'),'a layer holding unscoped work must not be reported as no change');
+    assert.ok(material.includes('另有 1 项范围外/未声明范围变化'),'the layer must point at section 7');
+    assert.ok(material.includes('const a=9'),'unscoped content is the only reviewable material and must be shown');
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
+});
+
+test('an out-of-scope write is flagged in its layer but stays out of the material',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,write}=makeRepo();
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-outsnap.json');
+  const out=path.join(workRoot(),tag+'-out.md');
+  try{
+    runTool(['snapshot','--repo',dir,'--out',snap,'--scope','src/**']);
+    write('docs/note.md','OUT_OF_SCOPE_BODY\n');
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.ok(data.out_of_scope.some(entry=>entry.file==='docs/note.md'));
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(!material.includes('（无未暂存变化）'),'the worktree layer holds an excluded change');
+    assert.ok(material.includes('另有 1 项范围外/未声明范围变化'));
+    assert.ok(!material.includes('OUT_OF_SCOPE_BODY'),'a declared scope keeps other lines out of the material');
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
+});
+
+test('a read-only task that wrote product files exposes them as not delivered',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,write}=makeRepo();
+  const tag=path.basename(dir);
+  const snap=path.join(workRoot(),tag+'-empty-snap.json');
+  const out=path.join(workRoot(),tag+'-empty-readonly.md');
+  try{
+    runTool(['snapshot','--repo',dir,'--out',snap,'--scope','']);
+    write('src/rogue.js','ROGUE_WRITE\n');
+    const data=JSON.parse(runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap]).stdout);
+    assert.equal(data.scope_mode,'empty');
+    assert.ok(data.out_of_scope.some(entry=>entry.file==='src/rogue.js'));
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(material.includes('显式空范围'));
+    assert.ok(material.includes('ROGUE_WRITE'),'a read-only task that wrote product files must show the evidence');
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
+  }
 });
 
 test('without Git the material shows before/after fingerprints and current content', () => {

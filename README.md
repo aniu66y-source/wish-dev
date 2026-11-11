@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.2**，入口精简，尚未发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.3**，评审材料口径修正并精简 SKILL.md 入口（原 2.3.2），尚未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.1](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.1)，发布于 2026-11-10；本版仅优化文档，脚本、测试与 CI 未改动。上一版 [2.3.0](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.0)
@@ -191,6 +191,9 @@ node "<skill>/scripts/review-material.mjs" collect --repo "<repo>" --out "<runti
 # 覆盖 BASE..HEAD 提交、暂存、未暂存、未跟踪新增内容、删除与重命名；候选集 = 基线 ∪ 当前 Git 变化 ∪ 提交
 # 归属只有 task / pre-existing / mixed / unknown；任务前已有用户改动单列，不并入本任务
 # 快照记录 base=null 时按空树比较首次提交；ok 只表示命令成功，完整性另看 integrity.status
+# 无快照时完整性即为 incomplete（只有当前状态、归属 unknown），不再写成 complete
+# 分节空态区分“本任务范围内无该层变化”与“该层有变化但被范围排除”，后者指向第 7 节
+# 显式空范围或未声明范围的变化在第 7 节展开内容并标明不计入交付；已声明范围只列清单
 # 快照仓库/模式/范围/BASE 不一致时拒绝采集；--out 必须在仓库外（含 ..name 目录与链接解析），不能覆盖基线
 # --scope "" 表示显式空范围（只读任务）；省略且无快照时按“未声明范围”列示
 # 无 Git 或无提交时用前后文件清单 + SHA-256 指纹；二进制/超限/读取失败标 incomplete

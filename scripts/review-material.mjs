@@ -573,6 +573,17 @@ function collect(repo, options) {
     notes,
   };
 
+  // No baseline snapshot means task-start attribution cannot be verified at all, so the
+  // material is incomplete by construction even when every body stays readable.
+  if (!state) {
+    limits.push({
+      file: '（基线快照）', layer: 'baseline', kind: 'no-snapshot',
+      reason: 'no baseline snapshot: task-start attribution unknown',
+      bytes: null, ref: null, digest: null,
+    });
+    summary.integrity.status = 'incomplete';
+  }
+
   const recordLimit = (change, view) => {
     if (view.complete) return;
     if (change.kind === 'deleted' && view.kind === 'missing') return;
@@ -840,14 +851,37 @@ function collect(repo, options) {
   lines.push('- 须协调者核对：同一文件被用户与任务先后修改时只能标为「mixed」；范围外变化是否属其他并行线；材料是否与交付块一致。');
   lines.push('- 本工具不提交、不暂存、不重置工作区，也不判断验收是否通过。', '');
 
+  // Baseline content view for a deletion: HEAD/snapshot blob when available.
+  function baselineView(file) {
+    const baseline = baselineOf(file);
+    if (baseline.head) return blobView(root, baseline.head);
+    // Non-Git snapshots store digests, not bodies: keep the digest and say the body is gone.
+    if (baseline.worktree && baseline.worktree.status === 'ok') {
+      return {kind: 'digest-only', complete: false, fingerprint: baseline.worktree,
+        ref: file, text: null, bytes: baseline.worktree.size, truncated: false};
+    }
+    return null;
+  }
+
+  function renderView(entry) {
+    if (entry.view.kind === 'text' && entry.view.text !== null) {
+      const parts = [];
+      if (entry.view.truncated) parts.push(`（正文截断：共 ${entry.view.bytes} 字节，仅展示前 ${CONTENT_LIMIT}）`);
+      parts.push(fenced(entry.view.text));
+      return parts;
+    }
+    return [`- 内容未展开（${entry.view.kind}）；摘要 ${fingerprintSummary(entry.view.fingerprint)}，引用 ${entry.view.ref ?? '（无）'}。`];
+  }
+
   const renderNote = entry => {
     if (entry.attribution === 'pre-existing') return `> ${entry.file}：内容与任务开始时一致，仅${layerLabel[entry.layer]}状态变化，不计入本任务实现内容。`;
     if (entry.attribution === 'mixed') return `> ${entry.file}：任务开始时已有改动，当前内容与任务开始时不同（mixed），须协调者核对归属。`;
     if (entry.attribution === 'unknown') return `> ${entry.file}：归属无法证实（${entry.note ?? '缺少基线'}），差异保留供评审。`;
     return '';
   };
-  const renderable = entry => inScope(entry)
-    && !(entry.attribution === 'pre-existing' && (entry.layer === 'worktree' || entry.layer === 'untracked'));
+  // addChange already drops pre-existing worktree/untracked records, so that rule has a
+  // single decision point; rendering only applies the scope filter.
+  const renderable = entry => inScope(entry);
   const byLayer = layer => entry => entry.layer === layer && renderable(entry);
   const baselineFingerprint = entry => {
     const baseline = baselineOf(entry.file);
@@ -875,11 +909,18 @@ function collect(repo, options) {
     }
     lines.push('');
   };
+  // Changes this layer holds but the declared scope excludes. They are listed in section 7,
+  // never merged into the delivery, but a layer must not report "no change" when they exist:
+  // that wording is what makes a reviewer conclude the task touched nothing.
+  const outsideIn = layer => changes.filter(entry => entry.layer === layer && !inScope(entry)).length;
   const section = (title, layer, args, empty) => {
     const entries = changes.filter(byLayer(layer));
+    const outside = outsideIn(layer);
     lines.push(title, '');
     if (!entries.length) {
-      lines.push(empty, '');
+      lines.push(outside
+        ? `（本任务范围内无${layerLabel[layer]}变化；另有 ${outside} 项范围外/未声明范围变化，见第 7 节）`
+        : empty, '');
       return;
     }
     const files = [...new Set(entries.map(entry => entry.file))];
@@ -900,9 +941,11 @@ function collect(repo, options) {
   section('## 2. 暂存区差异（尚未提交）', 'index', ['--cached'], gitMode ? '（无暂存变化）' : '（无 Git：不适用）');
   if (gitMode) {
     section('## 3. 未暂存差异（工作区 vs 索引）', 'worktree', [], '（无未暂存变化）');
-    const indexOnly = summary.unstaged.filter(file => !changes.some(entry => entry.file === file && entry.layer === 'worktree'));
-    if (indexOnly.length) {
-      lines.push(`> 以下文件相对索引有差异，但工作区内容与任务开始时一致，差异来自暂存/索引操作，未计入本任务实现内容：${indexOnly.join('、')}`, '');
+    // Files whose index entry differs but whose worktree still matches the task-start
+    // content: the difference comes from staging, not from the task writing new content.
+    const indexDifferenceOnly = summary.unstaged.filter(file => !changes.some(entry => entry.file === file && entry.layer === 'worktree'));
+    if (indexDifferenceOnly.length) {
+      lines.push(`> 以下文件相对索引有差异，但工作区内容与任务开始时一致，差异来自暂存/索引操作，未计入本任务实现内容：${indexDifferenceOnly.join('、')}`, '');
     }
   } else {
     const entries = changes.filter(entry => entry.scope === 'in' && entry.layer === 'worktree' && entry.kind !== 'deleted');
@@ -920,7 +963,12 @@ function collect(repo, options) {
 
   const untracked = changes.filter(byLayer('untracked'));
   lines.push('## 4. 未跟踪新增文件（内容）', '');
-  if (!untracked.length) lines.push('（无未跟踪文件）', '');
+  if (!untracked.length) {
+    const outsideUntracked = outsideIn('untracked');
+    lines.push(outsideUntracked
+      ? `（本任务范围内无未跟踪新增；另有 ${outsideUntracked} 项范围外/未声明范围变化，见第 7 节）`
+      : '（无未跟踪文件）', '');
+  }
   for (const entry of untracked) {
     lines.push(`### ${entry.file}`, '');
     if (entry.note) lines.push(renderNote(entry));
@@ -930,7 +978,12 @@ function collect(repo, options) {
 
   lines.push('## 5. 删除的文件', '');
   const deletions = changes.filter(entry => entry.kind === 'deleted' && inScope(entry));
-  if (!deletions.length) lines.push('（无删除）', '');
+  if (!deletions.length) {
+    const outsideDeletions = changes.filter(entry => entry.kind === 'deleted' && !inScope(entry)).length;
+    lines.push(outsideDeletions
+      ? `（本任务范围内无删除；另有 ${outsideDeletions} 项范围外/未声明范围的删除，见第 7 节）`
+      : '（无删除）', '');
+  }
   for (const entry of deletions) {
     const reason = entry.attribution === 'pre-existing'
       ? '任务开始前已不存在，不计入本任务'
@@ -981,11 +1034,33 @@ function collect(repo, options) {
   if (scope.mode !== 'declared') lines.push(`> 范围状态：${scope.mode === 'empty' ? '显式空范围（只读任务不写产品文件），下列变化未并入本任务交付' : '未声明写入范围，无法按范围归属；如需整仓请显式 --scope "**"'}。`, '');
   for (const entry of outside) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}，${entry.scope === 'out' ? '范围外' : '未声明范围'}）`);
   lines.push('');
+  // A declared scope leaves these as a bare list because the paths belong to other lines.
+  // An empty or unspecified scope has no such owner: this is then the only material a
+  // reviewer can read, so the content is shown in full while still marked as not delivered.
+  if (scope.mode !== 'declared' && outside.length) {
+    lines.push('### 未归属变化的内容（不计入本任务交付，供评审核对）', '');
+    for (const entry of outside) {
+      lines.push(`#### ${entry.file}（${layerLabel[entry.layer]}）`, '');
+      lines.push(`- 基线指纹：${fingerprintSummary(baselineFingerprint(entry))}`);
+      if (entry.kind === 'deleted') {
+        lines.push('- 当前状态：已删除', '');
+        continue;
+      }
+      lines.push(`- 当前指纹：${fingerprintSummary(entry.view.fingerprint)}`, '');
+      if (entry.note) lines.push(renderNote(entry));
+      lines.push(...renderView(entry));
+      lines.push('');
+    }
+  }
 
   if (notes.length || limits.length) {
     lines.push('## 8. 采集限制', '');
     for (const note of notes) lines.push('- ' + note);
     for (const limit of limits) {
+      if (limit.kind === 'no-snapshot') {
+        lines.push(`- incomplete: ${limit.reason}（只有当前状态，缺少任务前基线，归属见第 6、7 节）`);
+        continue;
+      }
       lines.push(`- incomplete: ${limit.file}（${layerLabel[limit.layer] ?? limit.layer}，${limit.reason}，${limit.bytes ?? '未知'} 字节，摘要 ${limit.digest ? limit.digest.slice(0, 12) + '…' : '不可用'}，引用 ${limit.ref ?? '（无）'}）`);
     }
     lines.push('');
@@ -1003,28 +1078,6 @@ function collect(repo, options) {
   fs.writeFileSync(options.out, lines.join('\n').replace(/\n{3,}/g, '\n\n'), {encoding: 'utf8'});
   summary.material_bytes = fs.statSync(options.out).size;
   return summary;
-
-  // Baseline content view for a deletion: HEAD/snapshot blob when available.
-  function baselineView(file) {
-    const baseline = baselineOf(file);
-    if (baseline.head) return blobView(root, baseline.head);
-    // Non-Git snapshots store digests, not bodies: keep the digest and say the body is gone.
-    if (baseline.worktree && baseline.worktree.status === 'ok') {
-      return {kind: 'digest-only', complete: false, fingerprint: baseline.worktree,
-        ref: file, text: null, bytes: baseline.worktree.size, truncated: false};
-    }
-    return null;
-  }
-
-  function renderView(entry) {
-    if (entry.view.kind === 'text' && entry.view.text !== null) {
-      const parts = [];
-      if (entry.view.truncated) parts.push(`（正文截断：共 ${entry.view.bytes} 字节，仅展示前 ${CONTENT_LIMIT}）`);
-      parts.push(fenced(entry.view.text));
-      return parts;
-    }
-    return [`- 内容未展开（${entry.view.kind}）；摘要 ${fingerprintSummary(entry.view.fingerprint)}，引用 ${entry.view.ref ?? '（无）'}。`];
-  }
 }
 
 const USAGE = [
