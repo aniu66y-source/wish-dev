@@ -4,7 +4,7 @@
 
 每轮临时资源使用独立 <runtime>/<project-slug>/<task-id>/<run-id>/；<runtime> 由 `WISH_DEV_RUNTIME_ROOT`、显式参数或用户指定目录决定，不写进项目或全局缓存。正式账本和有效证据保存在 wishes/<wish-id>/ 或项目既有位置；运行目录只存临时日志和工作副本，不作为唯一验收依据。结束前将必要脱敏结果归档并修正引用。优先更新已有记录，避免多套真相来源。
 
-**账本落盘硬门禁**：派发首个子智能体任务前，`wishes/<wish-id>/` 下须先有草稿 `prd.json` 与含连续 5 字段表头的 `progress.md`（表头窗口、可接受写法与失效判定一律见 [plan-contract.md](plan-contract.md) 账本门禁节，此处不重复口径）；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`，表头不成立同样拒绝。调研证据尚未取得时门禁非零属预期：可先派只读调研子智能体，补齐证据后复跑门禁，通过才进产品实现。
+**账本落盘硬门禁**：派发首个子智能体任务前，`wishes/<wish-id>/` 下须先有草稿 `prd.json` 与含连续 5 字段表头的 `progress.md`（表头窗口、可接受写法与失效判定一律见 [plan-contract.md](plan-contract.md)「账本落盘硬门禁」节，此处不重复口径）；`check-plan.mjs` 在结构校验后检查同目录 `progress.md`，缺失即 `exit 2` + `ledger:false`，表头不成立同样拒绝。调研证据尚未取得时门禁非零属预期：可先派只读调研子智能体，补齐证据后复跑门禁，通过才进产品实现。
 
 记账字段（主对话维护，非机器门禁；门禁只强制 5 字段表头，见 [plan-contract.md](plan-contract.md)）：
 

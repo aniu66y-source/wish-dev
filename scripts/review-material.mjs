@@ -451,6 +451,13 @@ function snapshot(repo, options) {
   const gitMode = isRepo(requested);
   const root = canonicalRepo(requested, gitMode);
   assertSafeOutput(options.out, root, null);
+  // A re-snapshot over the same file would silently replace the recorded baseline with
+  // the current state — work done between the two snapshots would then be attributed
+  // to "pre-existing". Refuse instead: use a new --out path or delete the old baseline.
+  if (fs.existsSync(options.out)) {
+    throw new Error('baseline snapshot already exists: ' + path.resolve(options.out)
+      + ' (use a new --out path or delete the old baseline; a silent overwrite would misattribute changes)');
+  }
   const base = gitMode ? head(root) : null;
   const state = {
     tool: TOOL,

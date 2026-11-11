@@ -32,7 +32,7 @@
 | 派生子智能体 | `Agent` 的 `subagent_type`（通用执行如 `general-purpose`） | 子代理（`/agents`、Task） | 文档中的等价"派生子智能体"能力 |
 | 同步并行派生 | 一条消息内多个 `Agent` 调用 | 并行子代理调用 | 批量同步派生 |
 | 异步派生 | `run_in_background: true` + `TaskOutput` | 后台任务 / 后台会话 | 异步任务接口 + 结果读取 |
-| 探索 / 规划 | `Explore`（工具集含 Bash/PowerShell 与消息能力，**非严格只读**）、`Plan`（声明只读） | Explore / Plan 子代理 | 只读或探索/规划型代理，需自行约束写入 |
+| 探索 / 规划 | `Explore`（工具集含 Bash/PowerShell 与消息能力，**非严格只读**）、`Plan`（声明只读） | Explore / Plan 子代理 | 只读或探索/规划型代理；类型声明不等于权限边界，下发块仍按 SKILL.md 明确写入范围 |
 | 会话续做 | `resume: <agent id>` | 会话续做 / `/resume` | 按会话 ID 续做 |
 | 团队设施（不启用） | `TeamCreate` / `SendMessage` | Agent Teams | 团队或队友模式 |
 

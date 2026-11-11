@@ -20,6 +20,9 @@ tools/eval/results-*.md
 .env.*
 !.env.example
 
+# Local agent workspace (session memory, not project content)
+.workbuddy/
+
 # OS/editor files
 .DS_Store
 Thumbs.db

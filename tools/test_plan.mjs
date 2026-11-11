@@ -1058,6 +1058,20 @@ test('collect refuses a widened scope, a conflicting base and unsafe outputs', t
   } finally { wipe(dir, snap, out); }
 });
 
+test('snapshot refuses to overwrite an existing baseline', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir} = initRepo({'src/a.js': 'base\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-snap.json');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    const bytes = fs.readFileSync(snap);
+    const second = runTool(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    assert.equal(second.status, 2, 're-snapshotting onto the same file must be refused');
+    assert.ok(JSON.parse(second.stdout).errors.some(message => message.includes('already exists')));
+    assert.deepEqual(fs.readFileSync(snap), bytes, 'the original baseline bytes must not change');
+  } finally { wipe(dir, snap); }
+});
+
 // ---- 复审第三轮回归：撤销用户改动、首次提交、输出越界、跨范围重命名、完整性 ----
 test('reverting a user edit to HEAD is reported, not marked unchanged', t => {
   if (!hasGit) { t.skip('git unavailable'); return; }

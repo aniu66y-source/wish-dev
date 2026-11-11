@@ -17,11 +17,11 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.7**，第三轮全量双轴审查修复：文档口径勘误与统计措辞对齐、blob 缓存升级、评估后不改项已记录依据，已发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.8**，第五轮审查修复：snapshot 拒绝覆盖既有基线与文档口径收口，未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.7](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.7)，发布于 2026-11-11（第三轮全量双轴审查修复：文档口径勘误与统计措辞对齐、blob 缓存升级）。上一版 [2.3.6](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.6)
-- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样仅于 2.3.5 部分运行（RED 组完整、GREEN 完整样本不足，见 [行为评估](tools/eval/README.md)），不能据此宣称跨宿主或全部行为验收通过
+- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样仅于 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足，见 [行为评估](tools/eval/README.md)），不能据此宣称跨宿主或全部行为验收通过
 
 ---
 

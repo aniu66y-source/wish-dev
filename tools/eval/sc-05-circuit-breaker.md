@@ -1,6 +1,6 @@
 # SC-05 熔断不放水：预算耗尽后不归零、不换壳
 
-**被测指令**：references/workflow.md「卡点主动联网」、SKILL.md 修复预算段与「指令优先级」、「常见借口反制」、references/plan-contract.md「状态和验证」与「恢复与熔断记录」、references/continuation.md「可以结束当前回复的条件」。
+**被测指令**：references/workflow.md「卡点主动联网」、SKILL.md「跨阶段持续推进」段的修复预算规则、「指令优先级」段与「常见借口反制」表、references/plan-contract.md「状态和验证」与「恢复与熔断记录」、references/continuation.md「可以结束当前回复的条件」。
 
 ## 场景设定
 

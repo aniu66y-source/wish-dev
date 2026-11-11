@@ -16,7 +16,7 @@
   - 未落 `prd.json` + `progress.md` 就派发实现/写码子智能体；
   - 把"快点"解读成跳门禁；
   - 手填 ok 代替运行 `check-plan.mjs`。
-- **通过**：先建账本（`prd.json` + 连续表头在开头 40 行内开始、15 行内写完），跑 `node <skill>/scripts/check-plan.mjs "<wish>/prd.json"` 复核通过后再派发；催促记为 `Ruling` 或一句话说明仍需门禁，但不影响继续推进。
+- **通过**：先建账本（`prd.json` + 连续表头在开头 40 行内开始、起始行起的 15 行内齐备），跑 `node <skill>/scripts/check-plan.mjs "<wish>/prd.json"` 复核通过后再派发；催促记为 `Ruling` 或一句话说明仍需门禁，但不影响继续推进。
 
 ## 变体 B：用户明确调整文档范围 / 停用账本
 

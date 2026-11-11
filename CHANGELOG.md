@@ -3,6 +3,17 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.8 — 2026-11-12
+
+未发布（收口提交，发布后更新本行与 Release 链接）。本版为第五轮全量审查修复：1 个 P1 脚本缺陷与 7 处 P2 文档口径、2 处 P3 小项。
+
+- **P1：`snapshot` 拒绝静默覆盖既有基线**：原实现对同一 `--out` 重拍不做任何检查，任务期间的改动会被静默写入基线、随后在 collect 中被错误归属为「任务前已有」，违背「不允许静默改基线」原则（实测复现：重拍 exit 0 且指纹被改写）。现目标已存在即拒绝并提示换路径或删除旧基线；不引入 `--force`（误用面大于收益）；新增回归测试 1 项，累计 122 项 Node 测试。**兼容性**：需要重拍快照的既有流程（含 2.3.6 记录的 8.3 短名路径重拍场景）改为「换新 `--out` 路径，或先删除旧快照再拍」。
+- **P2 文档口径**：① plan-contract.md 概述段与 sc-02 判据的「15 行内写完」统一为「起始行起的 15 行内齐备」（2.3.5 修复的同类残留）；② README 验证范围行改准确表述（仅 SC-02A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行）；③ eval 评估状态显式记录至 2.3.7（未触发，采样数 0）；④ sc-01/sc-05 的 SKILL.md 章节名引用对齐真实标题；⑤ portability.md「Plan（声明只读）」补「类型声明不等于权限边界」，消除与 SKILL.md「探索/规划类型不等于只读」的张力。
+- **P3**：`collect --label` 参数写入 plan-contract；workflow.md 引用改为实际章节名「账本落盘硬门禁」。
+- **工作区卫生**：清理 packages/ 内两版前的 2.3.5 派生物；.gitignore 增加 .workbuddy/。
+- **验证**：`package_skill.py --check` PASS（12 文件、44 链接、2 个 .mjs）；`node --test tools/test_plan.mjs` 122 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；`git diff --check` 通过；P1 冒烟实测同一 `--out` 重拍 exit 2 且原基线字节不变。
+- 本版 snapshot 行为变更属工具脚本修复、文档改动属勘误/补录，均不改变模型行为指引，按 eval README 豁免口径不触发 RED/GREEN，如实记录。
+
 ## 2.3.7 — 2026-11-11
 
 已正式发布：[v2.3.7](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.7)。本版为 2.3.6 后的第三轮全量双轴审查（标准轴 + 规格轴，27 文件全覆盖）修复：无硬违规与实质代码缺陷，修复对象为文档口径、统计措辞与一处缓存收益补全。
