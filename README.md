@@ -17,10 +17,10 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.6**，修复 Windows CI 暴露的输出守卫 8.3 短名 fail-open 缺陷，未发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.6**，修复 Windows CI 暴露的输出守卫 8.3 短名 fail-open 缺陷，已发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 最新正式版：[2.3.5](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.5)，发布于 2026-11-11（全量双轴审查全修：账本窗口口径对齐与规格去重、脚本双读/重复收敛、CI Windows 矩阵、契约锚点 17→19）。上一版 [2.3.4](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.4)
+- 最新正式版：[2.3.6](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.6)，发布于 2026-11-11（修复输出守卫在 8.3 短名路径下的 fail-open，Windows CI 矩阵首跑即捕获）。上一版 [2.3.5](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.5)
 - 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。独立 RED/GREEN 行为采样未运行，不能据此宣称跨宿主或全部行为验收通过
 
 ---
@@ -46,7 +46,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前正式版为 2.3.5），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前正式版为 2.3.6），按宿主规则导入 |
 | 目录复制 | 解压 Release ZIP，将其中完整 `wish-dev/` 目录复制到宿主 skills 目录；不要只拷 SKILL.md，也不要把整个源码仓库当安装包 |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 

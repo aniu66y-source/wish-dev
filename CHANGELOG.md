@@ -5,7 +5,7 @@
 
 ## 2.3.6 — 2026-11-11
 
-未发布（收口提交，发布后更新本行与 Release 链接）。本版修复 2.3.5 新增 Windows CI 矩阵后暴露的输出守卫 fail-open 缺陷。
+已正式发布：[v2.3.6](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.6)。本版修复 2.3.5 新增 Windows CI 矩阵后暴露的输出守卫 fail-open 缺陷。
 
 - **输出守卫在 8.3 短名路径下 fail-open（CI 实测发现）**：GitHub windows runner 的 TMP 含 8.3 短名组件（`C:\Users\RUNNER~1`）。`git rev-parse --show-toplevel` 把短名展开为完整拼写，而 Node `fs.realpathSync` 不展开；`assertSafeOutput` 两侧拼写不一致时把仓库内 `--out` 误判为仓库外，`collect` 会把材料写进仓库，违背只读采集承诺。修复：新增 `realPath`（Windows 用 `fs.realpathSync.native`——GetFinalPathNameByHandle，展开短名并返回规范大小写），`resolveReal` 与 `canonicalRepo` 非 Git 分支统一走该解析器，比较两侧拼写恒一致。本地以 `E:\CLAUDE~1`（含空格目录的 8.3 别名）复现：旧代码 exit 0 且材料真实写入仓库内，修复后 exit 2 正确拒绝。
 - **回归测试 ×2**：`resolveReal` 对 `C:\PROGRA~1` 的展开单元用例；端到端短名守卫用例（PowerShell FSO 取沙箱 8.3 别名，无别名卷带诊断跳过），累计 121 项 Node 测试。
