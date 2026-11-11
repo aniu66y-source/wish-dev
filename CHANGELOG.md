@@ -3,15 +3,16 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
-## 2.3.4 — 未发布
+## 2.3.4 — 2026-11-11
 
-2.3.3 发布后的全量双轴审查（标准轴：仓库约定 + 代码异味基线；规格轴：规格一致性与文档）发现的残留缺陷修复与文档补录。
+已正式发布：[v2.3.4](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.4)。本版为 2.3.3 发布后的全量双轴审查（标准轴：仓库约定 + 代码异味基线；规格轴：规格一致性与文档）发现的残留缺陷修复与文档补录。发布不等于已安装到宿主。
 
 - **无 Git 且无快照时空态不再冒充“无变化”（2.3.3 同类残留）**：`review-material.mjs` 该分支的 note 原写「材料只列出当前文件清单与指纹」，但无快照时第 3–7 节实际全为空态、什么也不列，note 与正文矛盾；且第 3/4/5/6/7 节会写「（无修改）」「（无未跟踪文件）」「（无删除）」「（无）」，在无法检测任何变化的模式下构成虚假的“无变化”陈述。现 note 改为如实说明无法检测任务期间的变化，第 3–7 节空态统一改为“无法判定”口径并指向第 8 节；`review material without a snapshot` 用例因 `if(!hasGit) skip` 未覆盖该分支，新增 1 项无 Git 无快照测试（各节不写“无变化”、note 不承诺列清单），累计 116 项 Node 测试。
 - **修正失效的章节名引用**：`workflow.md` 下发契约段引用 SKILL.md「派发模式」章节，SKILL.md 无此章节，对应规则实际位于「主对话边界（P0，领导层）」的「调用契约」段；`--check` 只校验 `](path)` 链接目标、不校验「」内章节名，故此前漏网。已改为引用现有章节名。
 - **补录 `--base` 参数文档**：`collect --base <sha>` 已在脚本 USAGE 实现但 README 与 `plan-contract.md` 均未记载。语义：仅在无快照时直接生效（归属仍按无快照口径 unknown/incomplete）；有快照时必须与其记录的 BASE 一致，快照无基线则拒绝，不允许静默改基线。`workflow.md` 按其“材料口径一律见 plan-contract.md”的既有约定不重复记载。
 - **代码清理**：删除 `resolveBase` 返回值中无任何消费者的 `source` 字段；`statusEntries` 的 `rename` 局部变量更名 `renamedOrCopied`（实际涵盖 `R` 与 `C` 两种状态）。审查中评估过合并 `check-plan.mjs` 的两条相邻强调标记正则：二者分别处理冒号在标记内/外两种语法，合并需引入带函数的替换，反而降低可读性，评估后不改。
-- **验证**：`package_skill.py --check` PASS（12 文件、43 链接、2 个 .mjs）；`node --test tools/test_plan.mjs` 116 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。脚本行为变化不改变模型行为指引，按 eval README 口径未跑 RED/GREEN 行为采样。
+- **验证**：`package_skill.py --check` PASS（12 文件、43 链接、2 个 .mjs）；`node --test tools/test_plan.mjs` 116 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；`git diff --check` 通过；发布包从收口提交的隔离副本生成，ZIP 12 成员与提交对应文件逐字节一致，zip / manifest / sha256 一致、文本为 LF、不含 `tools/` 或本机绝对路径。脚本行为变化不改变模型行为指引，按 eval README 口径未跑 RED/GREEN 行为采样。
+- **发布**：Release 附 `wish-dev-2.3.4.zip` / `.manifest.json` / `.zip.sha256` 三件套。本次为脚本与文档修订，不宣称行为验收或跨宿主验收通过；发布不等于已安装到宿主。
 
 ## 2.3.3 — 2026-11-11
 

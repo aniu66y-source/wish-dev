@@ -17,10 +17,10 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.4**，发布后全量审查修复：无 Git 且无快照时空态改“无法判定”口径、修正失效章节名引用、补录 `--base` 文档，尚未发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.4**，发布后全量审查修复：无 Git 且无快照时空态改“无法判定”口径、修正失效章节名引用、补录 `--base` 文档，已发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 最新正式版：[2.3.3](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.3)，发布于 2026-11-11（评审材料口径修正与基线重命名归属修复，并入原 2.3.2 的 SKILL.md 入口精简）。上一版 [2.3.1](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.1)
+- 最新正式版：[2.3.4](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.4)，发布于 2026-11-11（发布后全量审查修复：无 Git 且无快照时空态改“无法判定”口径、修正失效章节名引用、补录 `--base` 文档）。上一版 [2.3.3](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.3)
 - 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。独立 RED/GREEN 行为采样未运行，不能据此宣称跨宿主或全部行为验收通过
 
 ---
@@ -46,7 +46,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前正式版为 2.3.3），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前正式版为 2.3.4），按宿主规则导入 |
 | 目录复制 | 解压 Release ZIP，将其中完整 `wish-dev/` 目录复制到宿主 skills 目录；不要只拷 SKILL.md，也不要把整个源码仓库当安装包 |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
