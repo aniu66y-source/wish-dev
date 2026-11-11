@@ -9,7 +9,13 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Windows runs the same gates because several behaviours under test are Windows-specific:
+    # drive-letter/backslash normalisation, BOM tolerance and the junction/symlink output guard.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

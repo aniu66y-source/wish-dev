@@ -32,7 +32,8 @@ CONTRACT_ANCHORS = {
     "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
                                r"下发块用下方 12 项", r"运行模式：按宿主能力选择",
                                r"review-material\.mjs"),
-    "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"context_id",
+    "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"从文件开头 40 行内开始",
+                                    r"起始行起的 15 行内（含起始行）齐备", r"context_id",
                                     r"^## 写入权限（三类）", r"^## 评审材料与基线"),
 }
 

@@ -16,7 +16,8 @@
 - **评审材料脚本维护性修复**：同一 blob 在 `blobFingerprint` 与 `blobView` 中各读一次 `cat-file -p`，改为最近 blob 正文单缓存（指纹与视图共用一次读取，内存有界）；`git`/`gitBuffer` 除编码参数外完全相同，合并为 `git(cwd, args, encoding)`；`collect` 约 575 行混载采集语义与 Markdown 渲染，渲染段整体拆出独立 `renderMaterial()`（同文件，纯展示职责），后续空态措辞调整只触碰渲染函数。
 - **门禁脚本命名**：`check-plan.mjs` 的 `ledgerLine` 返回归一化字符串而非布尔，更名 `normalizeLedgerLine`，行为不变。
 - **测试夹具去重**：`tools/test_plan.mjs` 的 `makeRepo` 与 `initRepo` 两套近似仓库夹具（init/config/write/commit 逻辑相同）合并，`makeRepo` 改为以固定文件集调用 `initRepo`。
-- **契约锚点数补记**：2.2.0 记 `contracts` 为 13 个锚点，当前 `package_skill.py` 实为 17 个（SKILL.md 8 + workflow.md 5 + plan-contract.md 4），2.3.0–2.3.4 期间增删未单独记载；本条目补记实际数量，后续锚点增删随版本条目记录。
+- **契约锚点数补记并补强**：2.2.0 记 `contracts` 为 13 个锚点，2.3.4 及之前实际已增至 17 个（SKILL.md 8 + workflow.md 5 + plan-contract.md 4），期间增删未单独记载；本版补记并新增 2 个账本窗口锚点（「从文件开头 40 行内开始」「起始行起的 15 行内（含起始行）齐备」，防止窗口数字被静默删除时只报 WEAK），现行 19 个；后续锚点增删随版本条目记录。
+- **CI 增加 Windows 矩阵**：`ci.yml` 的 check job 改为 ubuntu-latest + windows-latest 双矩阵。盘符/反斜杠归一、BOM 容错、junction/symlink 输出守卫等行为此前只在本地 Windows 验证，现在两个平台都跑同一组三条门禁。
 - **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 119 项通过（116 + 新增 3：15/16 行边界 2、伪 `.git` 清单 1）；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。
 - 本轮为文档口径与脚本维护性修订：账本窗口以代码现有行为为基准对齐文档，不改变门禁判定与模型行为指引；按 eval README 口径未跑 RED/GREEN 行为采样，不宣称行为评估通过。
 
