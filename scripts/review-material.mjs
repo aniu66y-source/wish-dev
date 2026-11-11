@@ -302,8 +302,8 @@ function statusEntries(repo) {
     const x = token[0];
     const y = token[1];
     const file = token.slice(3);
-    const rename = x === 'R' || x === 'C';
-    entries.push({x, y, file, from: rename ? tokens[(i += 1)] ?? '' : null});
+    const renamedOrCopied = x === 'R' || x === 'C';
+    entries.push({x, y, file, from: renamedOrCopied ? tokens[(i += 1)] ?? '' : null});
   }
   return entries;
 }
@@ -528,13 +528,13 @@ function scopeOf(file, scope) {
 // A snapshot with `base: null` recorded "no commit existed"; that is different from "no
 // snapshot". Compare against the empty tree so the first commit is fully visible.
 function resolveBase(options, state, currentHead) {
-  if (options.base) return {kind: 'commit', sha: options.base, source: 'cli'};
+  if (options.base) return {kind: 'commit', sha: options.base};
   if (state) {
-    if (state.base) return {kind: 'commit', sha: state.base, source: 'snapshot'};
-    return {kind: 'empty', sha: EMPTY_TREE, source: 'snapshot-base-null'};
+    if (state.base) return {kind: 'commit', sha: state.base};
+    return {kind: 'empty', sha: EMPTY_TREE};
   }
-  if (currentHead) return {kind: 'commit', sha: currentHead, source: 'head'};
-  return {kind: 'none', sha: null, source: 'none'};
+  if (currentHead) return {kind: 'commit', sha: currentHead};
+  return {kind: 'none', sha: null};
 }
 
 function hasDiff(repo, args, file) {
@@ -558,6 +558,9 @@ function collect(repo, options) {
   const root = canonicalRepo(requested, gitMode);
   const mode = gitMode ? 'git' : 'snapshot';
   const state = readSnapshot(options.snapshot, {repo: root, mode, options});
+  // Without Git and without a snapshot nothing about task-time changes is detectable; every
+  // section's empty state must then read as "undeterminable", never as "no changes".
+  const undetectable = !gitMode && !state;
   assertSafeOutput(options.out, root, options.snapshot);
   const scope = resolveScope(options, state);
   const currentHead = gitMode ? head(root) : null;
@@ -808,7 +811,7 @@ function collect(repo, options) {
   } else {
     const current = manifest(root, {skipGit: false});
     const before = state?.files ?? null;
-    if (!state) notes.push('未提供基线快照：无 Git 模式下没有可比较的基线，材料只列出当前文件清单与指纹。');
+    if (!state) notes.push('未提供基线快照：无 Git 模式下没有可比较的基线，无法检测任务期间的变化，第 3–7 节的空态均为“无法判定”而非“无变化”。');
     if (before) {
       for (const [file, fingerprint] of Object.entries(current)) {
         if (!(file in before)) {
@@ -965,7 +968,9 @@ function collect(repo, options) {
   } else {
     const entries = changes.filter(entry => entry.scope === 'in' && entry.layer === 'worktree' && entry.kind !== 'deleted');
     lines.push('## 3. 文件变化（无 Git：前后指纹 + 当前内容）', '');
-    if (!entries.length) {
+    if (undetectable) {
+      lines.push('（无基线快照：无法判断任务期间是否修改，见第 8 节）', '');
+    } else if (!entries.length) {
       const outsideWorktree = outsideIn('worktree');
       lines.push(outsideWorktree
         ? `（本任务范围内无修改；该层另有 ${outsideWorktree} 项范围外/未声明范围变化，见第 7 节；新增见第 4 节，删除见第 5 节）`
@@ -983,7 +988,9 @@ function collect(repo, options) {
 
   const untracked = changes.filter(byLayer('untracked'));
   lines.push('## 4. 未跟踪新增文件（内容）', '');
-  if (!untracked.length) {
+  if (undetectable) {
+    lines.push('（无基线快照：无法判断任务期间是否新增，见第 8 节）', '');
+  } else if (!untracked.length) {
     const outsideUntracked = outsideIn('untracked');
     lines.push(outsideUntracked
       ? `（本任务范围内无未跟踪新增；该层另有 ${outsideUntracked} 项范围外/未声明范围变化，见第 7 节）`
@@ -998,7 +1005,9 @@ function collect(repo, options) {
 
   lines.push('## 5. 删除的文件', '');
   const deletions = changes.filter(entry => entry.kind === 'deleted' && inScope(entry));
-  if (!deletions.length) {
+  if (undetectable) {
+    lines.push('（无基线快照：无法判断任务期间是否删除，见第 8 节）', '');
+  } else if (!deletions.length) {
     // Deletions span layers (a rename leaves both an index and a worktree record), so counting
     // records would overstate the files a reviewer has to look at.
     const outsideDeleted = changes.filter(entry => entry.kind === 'deleted' && !inScope(entry));
@@ -1045,7 +1054,9 @@ function collect(repo, options) {
   const pre = changes.filter(entry => inScope(entry) && entry.attribution === 'pre-existing');
   const mixed = changes.filter(entry => inScope(entry) && entry.attribution === 'mixed');
   const unknown = changes.filter(entry => inScope(entry) && entry.attribution === 'unknown');
-  if (!pre.length && !mixed.length && !unknown.length) {
+  if (undetectable) {
+    lines.push('（无基线快照：无法判断任务前是否已有改动，见第 8 节）', '');
+  } else if (!pre.length && !mixed.length && !unknown.length) {
     // With an empty or unspecified scope nothing can be attributed, so a bare "none" would be
     // a false statement whenever the user did have task-start changes.
     const outsidePre = changes.filter(entry => !inScope(entry) && entry.attribution === 'pre-existing').length;
@@ -1060,7 +1071,8 @@ function collect(repo, options) {
 
   lines.push('## 7. 范围外 / 未声明范围的变化', '');
   const outside = changes.filter(entry => entry.scope !== 'in');
-  if (!outside.length) lines.push('（无）', '');
+  if (undetectable) lines.push('（无基线快照：无法判断任务期间是否发生任何变化，无从按范围归属，见第 8 节）', '');
+  else if (!outside.length) lines.push('（无）', '');
   if (scope.mode !== 'declared') lines.push(`> 范围状态：${scope.mode === 'empty' ? '显式空范围（只读任务不写产品文件），下列变化未并入本任务交付' : '未声明写入范围，无法按范围归属；如需整仓请显式 --scope "**"'}。`, '');
   for (const entry of outside) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}，${entry.scope === 'out' ? '范围外' : '未声明范围'}）`);
   lines.push('');

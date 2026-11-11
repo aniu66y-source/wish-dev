@@ -411,6 +411,38 @@ test('review material without a snapshot flags the attribution gap',t=>{
   }finally{fs.rmSync(dir,{recursive:true,force:true});fs.rmSync(out,{force:true});}
 });
 
+test('without Git or a snapshot, empty states read as undeterminable instead of claiming absence',()=>{
+  const dir=fs.mkdtempSync(path.join(workRoot(),'nogit-'));
+  const out=path.join(workRoot(),path.basename(dir)+'-material.md');
+  try{
+    fs.mkdirSync(path.join(dir,'src'),{recursive:true});
+    fs.writeFileSync(path.join(dir,'src','a.js'),'a\n');
+    const result=runTool(['collect','--repo',dir,'--out',out,'--scope','src/**']);
+    assert.equal(result.status,0,result.stdout);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.mode,'snapshot');
+    assert.equal(data.snapshot_used,false);
+    assert.equal(data.integrity.status,'incomplete');
+    const material=fs.readFileSync(out,'utf8');
+    assert.ok(material.includes('未提供基线快照：无 Git 模式下没有可比较的基线，无法检测任务期间的变化'),
+      'the note must not promise a file listing nothing produces');
+    assert.ok(!material.includes('只列出当前文件清单与指纹'),'the old inaccurate note must be gone');
+    // Nothing was detectable, so no section may claim that changes are absent.
+    assert.ok(!material.includes('（无修改；'),'section 3 must not claim no modifications');
+    assert.ok(!material.includes('（无未跟踪文件）'),'section 4 must not claim no additions');
+    assert.ok(!material.includes('（无删除）'),'section 5 must not claim no deletions');
+    assert.ok(!material.includes('\n（无）'),'sections 6/7 must not claim absence');
+    assert.ok(material.includes('（无基线快照：无法判断任务期间是否修改，见第 8 节）'));
+    assert.ok(material.includes('（无基线快照：无法判断任务期间是否新增，见第 8 节）'));
+    assert.ok(material.includes('（无基线快照：无法判断任务期间是否删除，见第 8 节）'));
+    assert.ok(material.includes('（无基线快照：无法判断任务前是否已有改动，见第 8 节）'));
+    assert.ok(material.includes('（无基线快照：无法判断任务期间是否发生任何变化，无从按范围归属，见第 8 节）'));
+  }finally{
+    fs.rmSync(dir,{recursive:true,force:true});
+    fs.rmSync(out,{force:true});
+  }
+});
+
 test('without Git, snapshots and fingerprints cover additions, edits and deletions',()=>{
   const dir=fs.mkdtempSync(path.join(workRoot(),'nogit-'));
   const name=path.basename(dir);

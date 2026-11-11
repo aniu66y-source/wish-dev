@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.3**，评审材料口径修正并精简 SKILL.md 入口（原 2.3.2）、补齐基线重命名归属修复，已发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.4**，发布后全量审查修复：无 Git 且无快照时空态改“无法判定”口径、修正失效章节名引用、补录 `--base` 文档，尚未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.3](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.3)，发布于 2026-11-11（评审材料口径修正与基线重命名归属修复，并入原 2.3.2 的 SKILL.md 入口精简）。上一版 [2.3.1](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.1)
@@ -177,7 +177,7 @@ python -B -m unittest discover -s tools -p "test_*.py"
 
 技能行为压力评估（大版本发布前或改动 P0 规则后；方法见 [tools/eval/README.md](tools/eval/README.md)）：RED（未注入技能）与 GREEN（注入当前版）**两组都要跑**，RED 基线本就通过时同样要跑 GREEN 确认没有引入退化；原始记录放运行根，不入库。
 
-下列 `<skill>`、`<wish>`、`<repo>`、`<runtime>` 都需替换为实际路径；命令使用单行形式，避免混用 Bash 与 PowerShell 续行符。`--scope` 是逗号分隔的路径模式字符串，不是 JSON 数组；`collect` 省略该参数时继承快照范围。
+下列 `<skill>`、`<wish>`、`<repo>`、`<runtime>` 都需替换为实际路径；命令使用单行形式，避免混用 Bash 与 PowerShell 续行符。`--scope` 是逗号分隔的路径模式字符串，不是 JSON 数组；`collect` 省略该参数时继承快照范围；`collect` 的 `--base <sha>` 仅在无快照时直接生效，有快照时必须与其记录一致、快照无基线则拒绝。
 
 ```bash
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
@@ -192,6 +192,8 @@ node "<skill>/scripts/review-material.mjs" collect --repo "<repo>" --out "<runti
 # 归属只有 task / pre-existing / mixed / unknown；任务前已有用户改动单列，不并入本任务
 # 快照记录 base=null 时按空树比较首次提交；ok 只表示命令成功，完整性另看 integrity.status
 # 无快照时完整性即为 incomplete（只有当前状态、归属 unknown），不再写成 complete
+# 无 Git 且无快照时无法检测任何变化，第 3–7 节空态写“无法判定”而非“无变化”
+# collect 无快照时可用 --base <sha> 显式指定 BASE 提交（归属仍 unknown）；有快照须与其记录一致，快照无基线则拒绝
 # 分节空态区分“本任务范围内无该层变化”与“该层有变化但被范围排除”，后者指向第 7 节
 # 显式空范围或未声明范围的变化在第 7 节展开内容并标明不计入交付；已声明范围只列清单
 # 快照仓库/模式/范围/BASE 不一致时拒绝采集；--out 必须在仓库外（含 ..name 目录与链接解析），不能覆盖基线
