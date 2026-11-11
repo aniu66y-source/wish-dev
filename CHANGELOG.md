@@ -14,7 +14,7 @@
 - **8.3 端到端用例统计口径**：无 8.3 别名的卷上原以 `t.diagnostic` + return 提前返回，node --test 计为通过；改为 `t.skip`，不再混入通过计数。
 - **blob 缓存收益补全**：`blobBody` 由单条记忆升级为有界 LRU（≤4MB/条、≤8 条，约 32MB 上限），指纹与视图之间的穿插读取序列也能命中，大 blob 不缓存、按需重读。
 - **评估后不改（记录依据，沿用 2.3.4 惯例）**：①`renderMaterial` 的「14 个参数」实为单对象解构参数（长参数表的标准解法已在位），再按关注点分组属装饰性改动；②`collect` 的归属 summary 数组与 changes 记录双轨——baseline 层记录刻意绕过 `addChange` 的丢弃规则，统一两轨需触碰归属判定这一正确性敏感区，回归风险大于去重收益。
-- **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 121 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。本版无模型行为指引变更，按 eval README 口径未跑 RED/GREEN 行为采样。
+- **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 121 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。本版无模型行为指引变更：plan-contract.md 的两处措辞改动均为补录已实现行为（正则本就大小写不敏感、8.3 展开为 2.3.6 实现），按 eval README 口径不触发行为评估；据此在 eval README「何时跑」中明确「补录/勘误已实现行为不构成触发、拿不准按触发处理」的豁免口径（增量复审提出的张力）。
 
 ## 2.3.6 — 2026-11-11
 
