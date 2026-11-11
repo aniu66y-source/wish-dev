@@ -176,7 +176,7 @@ const LEDGER_HEADER_START=40;
 const LEDGER_HEADER_SPAN=15;
 const TABLE_SEPARATOR=/^\|[\s:|-]+\|$/;
 
-function ledgerLine(line){
+function normalizeLedgerLine(line){
   let value=line.trim();
   value=value.replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^(?:[-*+]|\d+[.)])\s+/,'');
   value=value.replace(/^(\*\*|__|`)(.+?)([:：])\1/,'$2$3');
@@ -201,12 +201,12 @@ function ledgerStatus(file){
   // The header is one contiguous block near the top: blank lines and table separators
   // may sit between fields, but a prose line ends the block. Fields scattered through
   // the log do not satisfy it.
-  const start=lines.findIndex(line=>LEDGER_FIELDS.some(([,pattern])=>pattern.test(ledgerLine(line))));
+  const start=lines.findIndex(line=>LEDGER_FIELDS.some(([,pattern])=>pattern.test(normalizeLedgerLine(line))));
   const found=new Set();
   if(start>=0&&start<LEDGER_HEADER_START){
     const end=Math.min(start+LEDGER_HEADER_SPAN,lines.length);
     for(let i=start;i<end;i++){
-      const value=ledgerLine(lines[i]);
+      const value=normalizeLedgerLine(lines[i]);
       if(i>start&&!headerLine(value,lines[i]))break;
       for(const [name,pattern] of LEDGER_FIELDS)if(pattern.test(value))found.add(name);
     }

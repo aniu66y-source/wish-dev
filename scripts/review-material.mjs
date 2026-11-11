@@ -63,13 +63,9 @@ function run(cwd, command, args, encoding = 'utf8') {
 
 // --literal-pathspecs keeps a file name containing `*` or `?` from being read as a
 // pathspec pattern; core.quotePath=false keeps non-ASCII paths readable without touching
-// the user's Git configuration.
-function git(cwd, args) {
-  return run(cwd, 'git', ['-c', 'core.quotePath=false', '--literal-pathspecs', ...args]);
-}
-
-function gitBuffer(cwd, args) {
-  return run(cwd, 'git', ['-c', 'core.quotePath=false', '--literal-pathspecs', ...args], null);
+// the user's Git configuration. Pass encoding=null for raw Buffer output.
+function git(cwd, args, encoding = 'utf8') {
+  return run(cwd, 'git', ['-c', 'core.quotePath=false', '--literal-pathspecs', ...args], encoding);
 }
 
 function gitValue(cwd, args) {
@@ -154,6 +150,19 @@ function fingerprintFile(file) {
 }
 
 const blobCache = new Map();
+// The most recent blob body: fingerprinting and viewing the same blob read it once
+// instead of running `cat-file -p` twice per SHA. A single-entry memo keeps memory
+// bounded (one blob at most BLOB_LIMIT) while covering the fingerprint-then-view
+// sequence every caller follows.
+let lastBlobBody = {sha: null, buffer: null};
+
+function blobBody(repo, sha) {
+  if (lastBlobBody.sha === sha) return lastBlobBody.buffer;
+  const result = git(repo, ['cat-file', '-p', sha], null);
+  if (result.status !== 0) return null;
+  lastBlobBody = {sha, buffer: result.stdout};
+  return result.stdout;
+}
 
 function blobFingerprint(repo, sha) {
   if (!sha) return {status: 'missing', sha256: null, size: null, blob: null};
@@ -170,9 +179,9 @@ function blobFingerprint(repo, sha) {
     blobCache.set(sha, large);
     return large;
   }
-  const content = gitBuffer(repo, ['cat-file', '-p', sha]);
-  const value = content.status === 0
-    ? {status: 'ok', sha256: sha256(content.stdout), size: content.stdout.length, blob: sha}
+  const buffer = blobBody(repo, sha);
+  const value = buffer !== null
+    ? {status: 'ok', sha256: sha256(buffer), size: buffer.length, blob: sha}
     : {status: 'unreadable', sha256: null, size, blob: sha};
   blobCache.set(sha, value);
   return value;
@@ -226,12 +235,11 @@ function blobView(repo, sha) {
     return {kind: 'unreadable', complete: false, fingerprint, ref: 'blob:' + sha, text: null,
       bytes: fingerprint.size, truncated: false};
   }
-  const result = gitBuffer(repo, ['cat-file', '-p', sha]);
-  if (result.status !== 0) {
+  const buffer = blobBody(repo, sha);
+  if (buffer === null) {
     return {kind: 'unreadable', complete: false, fingerprint, ref: 'blob:' + sha, text: null,
       bytes: null, truncated: false};
   }
-  const buffer = result.stdout;
   const slice = buffer.subarray(0, Math.min(CONTENT_LIMIT, buffer.length));
   if (slice.includes(0)) {
     return {kind: 'binary', complete: false, fingerprint, ref: 'blob:' + sha, text: null,
@@ -551,294 +559,11 @@ function diffFor(repo, args, files) {
   return result.stdout.trim() ? fenced(result.stdout, 'diff') : '';
 }
 
-function collect(repo, options) {
-  const requested = path.resolve(repo);
-  assertDirectory(requested);
-  const gitMode = isRepo(requested);
-  const root = canonicalRepo(requested, gitMode);
-  const mode = gitMode ? 'git' : 'snapshot';
-  const state = readSnapshot(options.snapshot, {repo: root, mode, options});
-  // Without Git and without a snapshot nothing about task-time changes is detectable; every
-  // section's empty state must then read as "undeterminable", never as "no changes".
-  const undetectable = !gitMode && !state;
-  assertSafeOutput(options.out, root, options.snapshot);
-  const scope = resolveScope(options, state);
-  const currentHead = gitMode ? head(root) : null;
-  const baseInfo = resolveBase(options, state, currentHead);
-  const notes = [];
-  const limits = [];
-  const changes = [];
-  const seen = new Set();
-  const summary = {
-    ok: true,
-    mode,
-    output: path.resolve(options.out),
-    snapshot_used: Boolean(state),
-    snapshot_repo: state?.repo ?? null,
-    base: baseInfo.kind === 'empty' ? null : baseInfo.sha,
-    base_kind: baseInfo.kind,
-    head: currentHead,
-    scope: scope.patterns,
-    scope_mode: scope.mode,
-    committed: [], staged: [], unstaged: [], untracked: [], deleted: [], renamed: [],
-    task: [], pre_existing: [], pre_existing_also_modified: [], out_of_scope: [], unscoped: [],
-    integrity: {status: 'complete', limits},
-    notes,
-  };
-
-  // No baseline snapshot means task-start attribution cannot be verified at all, so the
-  // material is incomplete by construction even when every body stays readable.
-  if (!state) {
-    limits.push({
-      file: '（基线快照）', layer: 'baseline', kind: 'no-snapshot',
-      reason: 'no baseline snapshot: task-start attribution unknown',
-      bytes: null, ref: null, digest: null,
-    });
-    summary.integrity.status = 'incomplete';
-  }
-
-  const recordLimit = (change, view) => {
-    if (view.complete) return;
-    if (change.kind === 'deleted' && view.kind === 'missing') return;
-    limits.push({
-      file: change.file,
-      layer: change.layer,
-      kind: view.kind,
-      reason: view.kind === 'text' ? 'content truncated' : view.kind,
-      bytes: view.bytes,
-      ref: view.ref,
-      digest: view.fingerprint?.sha256 ?? null,
-    });
-  };
-
-  const addChange = (change, view) => {
-    const key = change.layer + ':' + change.file;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    const verdict = attribute({...change, view}, baselineOf(change.file));
-    // For the worktree/untracked layers the baseline is the same layer, so an equal
-    // digest means nothing changed there (a status difference can still exist because the
-    // index moved). Keep the record only when the layer itself changed.
-    if (verdict.attribution === 'pre-existing' && (change.layer === 'worktree' || change.layer === 'untracked')) return null;
-    const entry = {...change, view, attribution: verdict.attribution, note: verdict.note,
-      scope: scopeOf(change.file, scope)};
-    changes.push(entry);
-    recordLimit(entry, view);
-    if (entry.scope === 'out') summary.out_of_scope.push({file: entry.file, layer: entry.layer, attribution: entry.attribution});
-    else if (entry.scope === 'unscoped') summary.unscoped.push({file: entry.file, layer: entry.layer, attribution: entry.attribution});
-    else if (entry.attribution === 'task') summary.task.push({file: entry.file, layer: entry.layer, attribution: entry.attribution});
-    else if (entry.attribution === 'pre-existing') summary.pre_existing.push({file: entry.file, layer: entry.layer, attribution: entry.attribution, note: entry.note});
-    else summary.pre_existing_also_modified.push({file: entry.file, layer: entry.layer, attribution: entry.attribution, note: entry.note});
-    return entry;
-  };
-
-  // Baseline per path. `index` decides whether the index layer changed; `worktree` is the
-  // task-start content digest used both for worktree change detection and for content
-  // attribution, so an index that differs from the worktree at task start is not itself a
-  // change.
-  const baseTree = state?.base ? treeBlobs(root, state.base) : new Map();
-  const baselineCache = new Map();
-  const baselineOf = file => {
-    if (baselineCache.has(file)) return baselineCache.get(file);
-    let value;
-    if (!state) value = {kind: 'unknown'};
-    else if (state.mode === 'snapshot') {
-      const before = state.files?.[file];
-      value = before
-        ? {kind: 'file', head: null, index: null, worktree: before}
-        : {kind: 'absent'};
-    } else if (Object.hasOwn(state.untracked ?? {}, file)) {
-      value = {kind: 'untracked', head: null, index: null, worktree: state.untracked[file]};
-    } else if (Object.hasOwn(state.dirty ?? {}, file)) {
-      const entry = state.dirty[file];
-      value = {kind: 'dirty', head: entry.head, index: entry.index, worktree: entry.worktree};
-    } else {
-      const headBlob = state.base ? baseTree.get(file) ?? null : null;
-      value = headBlob
-        ? {kind: 'tracked', head: headBlob, index: headBlob, worktree: blobFingerprint(root, headBlob)}
-        : {kind: 'absent'};
-    }
-    baselineCache.set(file, value);
-    return value;
-  };
-
-  // Attribution answers "whose content is this", separately from "did this layer change".
-  function attribute(change, baseline) {
-    if (!state) return {attribution: 'unknown', note: '未提供基线快照，任务前归属无法判断'};
-    if (baseline.kind === 'unknown') return {attribution: 'unknown', note: '基线与当前模式不一致'};
-    if (baseline.kind === 'absent' || baseline.kind === 'tracked' || baseline.kind === 'file') {
-      return {attribution: 'task', note: null};
-    }
-    const before = baseline.worktree;
-    if (change.kind === 'deleted') {
-      if (!before || before.status === 'missing') return {attribution: 'pre-existing', note: '任务开始前已不存在'};
-      if (before.status === 'ok') return {attribution: 'mixed', note: '删除的内容并非本任务所写（任务开始时已存在改动）'};
-      return {attribution: 'unknown', note: '基线摘要不可用（大文件或不可读）'};
-    }
-    if (sameState(before, change.view.fingerprint)) {
-      return {attribution: 'pre-existing', note: '内容与任务开始时一致，仅位置/状态变化'};
-    }
-    if (!before || before.status !== 'ok' || change.view.fingerprint.status !== 'ok') {
-      return {attribution: 'unknown', note: '缺少可比较的内容摘要（大文件或不可读）'};
-    }
-    return {attribution: 'mixed', note: '任务开始时已有改动，当前内容与任务开始时不同'};
-  }
-
-  if (gitMode) {
-    const index = indexBlobs(root);
-    const treeNow = currentHead ? treeBlobs(root, currentHead) : new Map();
-    const status = statusEntries(root);
-    const statusByFile = new Map(status.map(entry => [entry.file, entry]));
-    const committed = currentHead && (baseInfo.kind === 'commit' || baseInfo.kind === 'empty')
-      ? nameStatusZ(root, [`${baseInfo.sha}..HEAD`])
-      : [];
-    if (baseInfo.kind === 'empty') notes.push('基线快照记录当时没有提交：以空树为 BASE 比较首次提交，不用当前 HEAD 覆盖已记录的空基线。');
-    if (baseInfo.kind === 'none') notes.push('仓库没有任何提交：无法生成提交差异，改用工作区与指纹核对。');
-
-    const committedFingerprints = new Map();
-    const addCommitted = item => {
-      const view = item.kind === 'D'
-        ? blobView(root, resolveBlob(root, baseInfo.sha, item.file))
-        : blobView(root, treeNow.get(item.file) ?? resolveBlob(root, 'HEAD', item.file));
-      committedFingerprints.set(item.file, view.fingerprint);
-      summary.committed.push(item.file);
-      if (item.kind === 'D') summary.deleted.push(item.file);
-      addChange({file: item.file, layer: 'committed', kind: item.kind === 'D' ? 'deleted' : 'modified'}, view);
-    };
-
-    for (const item of committed) {
-      if (item.kind === 'R') {
-        summary.renamed.push({from: item.from, file: item.file, layer: 'committed'});
-        summary.deleted.push(item.from);
-        addChange({file: item.from, layer: 'committed', kind: 'deleted'},
-          blobView(root, resolveBlob(root, baseInfo.sha, item.from)));
-        addCommitted({kind: 'A', file: item.file});
-        continue;
-      }
-      addCommitted(item);
-    }
-
-    // Candidates are the union of baseline files, current status paths and committed paths.
-    // Status only supplies candidates: whether a layer changed is decided by comparing that
-    // layer with its own baseline, never by the presence of a status letter.
-    const candidates = new Set([
-      ...Object.keys(state?.dirty ?? {}),
-      ...Object.keys(state?.untracked ?? {}),
-      ...status.map(entry => entry.file),
-      ...status.filter(entry => entry.from).map(entry => entry.from),
-      ...committed.map(item => item.file),
-      ...committed.filter(item => item.from).map(item => item.from),
-    ]);
-
-    const evaluated = new Map();
-    for (const file of [...candidates].sort()) {
-      const entry = statusByFile.get(file) ?? null;
-      const baseline = baselineOf(file);
-      const currentIndexSha = index.get(file) ?? null;
-      const currentWt = fingerprintFile(path.join(root, file));
-      const indexChanged = currentIndexSha !== (baseline.index ?? null);
-      const worktreeChanged = !sameState(baseline.worktree ?? {status: 'missing', sha256: null, size: null}, currentWt);
-      evaluated.set(file, {indexChanged, worktreeChanged});
-
-      // The status arrays keep mirroring what Git reports; records are created separately.
-      if (entry) {
-        if (entry.x === '?') summary.untracked.push(file);
-        else {
-          if (entry.x !== ' ') summary.staged.push(file);
-          if (entry.y !== ' ') summary.unstaged.push(file);
-        }
-        if (entry.x === 'R' && entry.from) {
-          summary.renamed.push({from: entry.from, file, layer: 'index'});
-          summary.deleted.push(entry.from);
-        }
-        if (entry.x === 'D' || entry.y === 'D') summary.deleted.push(file);
-      }
-      if (committed.some(item => item.file === file && item.kind === 'D')) summary.deleted.push(file);
-
-      if (entry && entry.x === '?') {
-        // Untracked files produce a record only when their content moved from the baseline.
-        if (worktreeChanged) {
-          addChange({file, layer: 'untracked', kind: baseline.kind === 'untracked' ? 'modified' : 'added'},
-            worktreeView(root, file));
-        }
-        continue;
-      }
-
-      const committedFingerprint = committedFingerprints.get(file) ?? null;
-      let indexFingerprint = null;
-      if (indexChanged) {
-        const view = blobView(root, currentIndexSha);
-        indexFingerprint = view.fingerprint;
-        if (!sameFingerprint(indexFingerprint, committedFingerprint)) {
-          addChange({file, layer: 'index', kind: currentIndexSha ? 'modified' : 'deleted', oldPath: entry?.from ?? null}, view);
-        }
-      }
-      if (worktreeChanged) {
-        // A worktree that only matches the recorded index or commit is already covered by
-        // that layer; a worktree restored to a *pre-task* value is still a task change.
-        const explainedByIndex = sameFingerprint(currentWt, indexFingerprint);
-        const explainedByCommit = sameFingerprint(currentWt, committedFingerprint);
-        if (!explainedByIndex && !explainedByCommit) {
-          addChange({file, layer: 'worktree', kind: currentWt.status === 'missing' ? 'deleted' : 'modified', oldPath: entry?.from ?? null},
-            worktreeView(root, file));
-        }
-      }
-    }
-
-    // Baseline edits with no rendered layer are either proven unchanged (both comparisons
-    // succeeded) or moved in a way no rendered layer covers.
-    for (const file of [...Object.keys(state?.dirty ?? {}), ...Object.keys(state?.untracked ?? {})]) {
-      const info = evaluated.get(file);
-      if (!info) continue;
-      if (changes.some(change => change.file === file && change.layer !== 'baseline')) continue;
-      const scopeClass = scopeOf(file, scope);
-      if (info.indexChanged || info.worktreeChanged) {
-        changes.push({file, layer: 'baseline', kind: 'changed-unrendered', scope: scopeClass,
-          attribution: 'unknown', note: '检测到任务期间变化但无法归属到具体层，须协调者核对',
-          view: worktreeView(root, file)});
-        if (scopeClass === 'out') summary.out_of_scope.push({file, layer: 'baseline', attribution: 'unknown'});
-        else if (scopeClass === 'unscoped') summary.unscoped.push({file, layer: 'baseline', attribution: 'unknown'});
-        else summary.pre_existing_also_modified.push({file, layer: 'baseline', attribution: 'unknown'});
-        continue;
-      }
-      changes.push({file, layer: 'baseline', kind: 'unchanged', scope: scopeClass,
-        attribution: 'pre-existing', note: '任务开始时已改动，本次未变化', view: worktreeView(root, file)});
-      if (scopeClass === 'in') summary.pre_existing.push({file, layer: 'baseline', attribution: 'pre-existing'});
-      else if (scopeClass === 'out') summary.out_of_scope.push({file, layer: 'baseline', attribution: 'pre-existing'});
-      else summary.unscoped.push({file, layer: 'baseline', attribution: 'pre-existing'});
-    }
-    if (!state) notes.push('未提供基线快照：归属标为 unknown，材料列出当前全部变化，不声称验证过任务前归属。');
-  } else {
-    const current = manifest(root, {skipGit: false});
-    const before = state?.files ?? null;
-    if (!state) notes.push('未提供基线快照：无 Git 模式下没有可比较的基线，无法检测任务期间的变化，第 3–7 节的空态均为“无法判定”而非“无变化”。');
-    if (before) {
-      for (const [file, fingerprint] of Object.entries(current)) {
-        if (!(file in before)) {
-          summary.untracked.push(file);
-          addChange({file, layer: 'untracked', kind: 'added'}, worktreeView(root, file));
-        } else if (!sameState(before[file], fingerprint)) {
-          summary.unstaged.push(file);
-          addChange({file, layer: 'worktree', kind: 'modified'}, worktreeView(root, file));
-        }
-      }
-      for (const file of Object.keys(before)) {
-        if (file in current) continue;
-        summary.deleted.push(file);
-        addChange({file, layer: 'worktree', kind: 'deleted'}, blobView(root, null));
-      }
-    }
-  }
-
-  summary.committed = [...new Set(summary.committed)];
-  summary.staged = [...new Set(summary.staged)];
-  summary.unstaged = [...new Set(summary.unstaged)];
-  summary.untracked = [...new Set(summary.untracked)];
-  summary.deleted = [...new Set(summary.deleted)].sort();
-  summary.renamed = summary.renamed.filter(Boolean);
-  for (const list of [summary.task, summary.pre_existing, summary.pre_existing_also_modified, summary.out_of_scope, summary.unscoped]) {
-    list.sort((a, b) => a.file.localeCompare(b.file) || a.layer.localeCompare(b.layer));
-  }
+// Markdown rendering of the collected records: pure presentation, no collection
+// semantics. It may still append integrity limits it discovers while rendering (for
+// example an unshowable baseline body in section 5), which collect() folds back into
+// the summary so the header line and the JSON never disagree.
+function renderMaterial({root, requested, options, gitMode, baseInfo, currentHead, scope, state, summary, changes, limits, notes, baselineOf, undetectable}) {
   const inScope = entry => entry.scope === 'in';
   const layerLabel = {committed: '提交', index: '暂存', worktree: '工作区', untracked: '未跟踪', baseline: '任务开始时'};
   const lines = [];
@@ -1113,6 +838,301 @@ function collect(repo, options) {
     }
     lines.push('');
   }
+  return lines;
+}
+
+function collect(repo, options) {
+  const requested = path.resolve(repo);
+  assertDirectory(requested);
+  const gitMode = isRepo(requested);
+  const root = canonicalRepo(requested, gitMode);
+  const mode = gitMode ? 'git' : 'snapshot';
+  const state = readSnapshot(options.snapshot, {repo: root, mode, options});
+  // Without Git and without a snapshot nothing about task-time changes is detectable; every
+  // section's empty state must then read as "undeterminable", never as "no changes".
+  const undetectable = !gitMode && !state;
+  assertSafeOutput(options.out, root, options.snapshot);
+  const scope = resolveScope(options, state);
+  const currentHead = gitMode ? head(root) : null;
+  const baseInfo = resolveBase(options, state, currentHead);
+  const notes = [];
+  const limits = [];
+  const changes = [];
+  const seen = new Set();
+  const summary = {
+    ok: true,
+    mode,
+    output: path.resolve(options.out),
+    snapshot_used: Boolean(state),
+    snapshot_repo: state?.repo ?? null,
+    base: baseInfo.kind === 'empty' ? null : baseInfo.sha,
+    base_kind: baseInfo.kind,
+    head: currentHead,
+    scope: scope.patterns,
+    scope_mode: scope.mode,
+    committed: [], staged: [], unstaged: [], untracked: [], deleted: [], renamed: [],
+    task: [], pre_existing: [], pre_existing_also_modified: [], out_of_scope: [], unscoped: [],
+    integrity: {status: 'complete', limits},
+    notes,
+  };
+
+  // No baseline snapshot means task-start attribution cannot be verified at all, so the
+  // material is incomplete by construction even when every body stays readable.
+  if (!state) {
+    limits.push({
+      file: '（基线快照）', layer: 'baseline', kind: 'no-snapshot',
+      reason: 'no baseline snapshot: task-start attribution unknown',
+      bytes: null, ref: null, digest: null,
+    });
+    summary.integrity.status = 'incomplete';
+  }
+
+  const recordLimit = (change, view) => {
+    if (view.complete) return;
+    if (change.kind === 'deleted' && view.kind === 'missing') return;
+    limits.push({
+      file: change.file,
+      layer: change.layer,
+      kind: view.kind,
+      reason: view.kind === 'text' ? 'content truncated' : view.kind,
+      bytes: view.bytes,
+      ref: view.ref,
+      digest: view.fingerprint?.sha256 ?? null,
+    });
+  };
+
+  const addChange = (change, view) => {
+    const key = change.layer + ':' + change.file;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    const verdict = attribute({...change, view}, baselineOf(change.file));
+    // For the worktree/untracked layers the baseline is the same layer, so an equal
+    // digest means nothing changed there (a status difference can still exist because the
+    // index moved). Keep the record only when the layer itself changed.
+    if (verdict.attribution === 'pre-existing' && (change.layer === 'worktree' || change.layer === 'untracked')) return null;
+    const entry = {...change, view, attribution: verdict.attribution, note: verdict.note,
+      scope: scopeOf(change.file, scope)};
+    changes.push(entry);
+    recordLimit(entry, view);
+    if (entry.scope === 'out') summary.out_of_scope.push({file: entry.file, layer: entry.layer, attribution: entry.attribution});
+    else if (entry.scope === 'unscoped') summary.unscoped.push({file: entry.file, layer: entry.layer, attribution: entry.attribution});
+    else if (entry.attribution === 'task') summary.task.push({file: entry.file, layer: entry.layer, attribution: entry.attribution});
+    else if (entry.attribution === 'pre-existing') summary.pre_existing.push({file: entry.file, layer: entry.layer, attribution: entry.attribution, note: entry.note});
+    else summary.pre_existing_also_modified.push({file: entry.file, layer: entry.layer, attribution: entry.attribution, note: entry.note});
+    return entry;
+  };
+
+  // Baseline per path. `index` decides whether the index layer changed; `worktree` is the
+  // task-start content digest used both for worktree change detection and for content
+  // attribution, so an index that differs from the worktree at task start is not itself a
+  // change.
+  const baseTree = state?.base ? treeBlobs(root, state.base) : new Map();
+  const baselineCache = new Map();
+  const baselineOf = file => {
+    if (baselineCache.has(file)) return baselineCache.get(file);
+    let value;
+    if (!state) value = {kind: 'unknown'};
+    else if (state.mode === 'snapshot') {
+      const before = state.files?.[file];
+      value = before
+        ? {kind: 'file', head: null, index: null, worktree: before}
+        : {kind: 'absent'};
+    } else if (Object.hasOwn(state.untracked ?? {}, file)) {
+      value = {kind: 'untracked', head: null, index: null, worktree: state.untracked[file]};
+    } else if (Object.hasOwn(state.dirty ?? {}, file)) {
+      const entry = state.dirty[file];
+      value = {kind: 'dirty', head: entry.head, index: entry.index, worktree: entry.worktree};
+    } else {
+      const headBlob = state.base ? baseTree.get(file) ?? null : null;
+      value = headBlob
+        ? {kind: 'tracked', head: headBlob, index: headBlob, worktree: blobFingerprint(root, headBlob)}
+        : {kind: 'absent'};
+    }
+    baselineCache.set(file, value);
+    return value;
+  };
+
+  // Attribution answers "whose content is this", separately from "did this layer change".
+  function attribute(change, baseline) {
+    if (!state) return {attribution: 'unknown', note: '未提供基线快照，任务前归属无法判断'};
+    if (baseline.kind === 'unknown') return {attribution: 'unknown', note: '基线与当前模式不一致'};
+    if (baseline.kind === 'absent' || baseline.kind === 'tracked' || baseline.kind === 'file') {
+      return {attribution: 'task', note: null};
+    }
+    const before = baseline.worktree;
+    if (change.kind === 'deleted') {
+      if (!before || before.status === 'missing') return {attribution: 'pre-existing', note: '任务开始前已不存在'};
+      if (before.status === 'ok') return {attribution: 'mixed', note: '删除的内容并非本任务所写（任务开始时已存在改动）'};
+      return {attribution: 'unknown', note: '基线摘要不可用（大文件或不可读）'};
+    }
+    if (sameState(before, change.view.fingerprint)) {
+      return {attribution: 'pre-existing', note: '内容与任务开始时一致，仅位置/状态变化'};
+    }
+    if (!before || before.status !== 'ok' || change.view.fingerprint.status !== 'ok') {
+      return {attribution: 'unknown', note: '缺少可比较的内容摘要（大文件或不可读）'};
+    }
+    return {attribution: 'mixed', note: '任务开始时已有改动，当前内容与任务开始时不同'};
+  }
+
+  if (gitMode) {
+    const index = indexBlobs(root);
+    const treeNow = currentHead ? treeBlobs(root, currentHead) : new Map();
+    const status = statusEntries(root);
+    const statusByFile = new Map(status.map(entry => [entry.file, entry]));
+    const committed = currentHead && (baseInfo.kind === 'commit' || baseInfo.kind === 'empty')
+      ? nameStatusZ(root, [`${baseInfo.sha}..HEAD`])
+      : [];
+    if (baseInfo.kind === 'empty') notes.push('基线快照记录当时没有提交：以空树为 BASE 比较首次提交，不用当前 HEAD 覆盖已记录的空基线。');
+    if (baseInfo.kind === 'none') notes.push('仓库没有任何提交：无法生成提交差异，改用工作区与指纹核对。');
+
+    const committedFingerprints = new Map();
+    const addCommitted = item => {
+      const view = item.kind === 'D'
+        ? blobView(root, resolveBlob(root, baseInfo.sha, item.file))
+        : blobView(root, treeNow.get(item.file) ?? resolveBlob(root, 'HEAD', item.file));
+      committedFingerprints.set(item.file, view.fingerprint);
+      summary.committed.push(item.file);
+      if (item.kind === 'D') summary.deleted.push(item.file);
+      addChange({file: item.file, layer: 'committed', kind: item.kind === 'D' ? 'deleted' : 'modified'}, view);
+    };
+
+    for (const item of committed) {
+      if (item.kind === 'R') {
+        summary.renamed.push({from: item.from, file: item.file, layer: 'committed'});
+        summary.deleted.push(item.from);
+        addChange({file: item.from, layer: 'committed', kind: 'deleted'},
+          blobView(root, resolveBlob(root, baseInfo.sha, item.from)));
+        addCommitted({kind: 'A', file: item.file});
+        continue;
+      }
+      addCommitted(item);
+    }
+
+    // Candidates are the union of baseline files, current status paths and committed paths.
+    // Status only supplies candidates: whether a layer changed is decided by comparing that
+    // layer with its own baseline, never by the presence of a status letter.
+    const candidates = new Set([
+      ...Object.keys(state?.dirty ?? {}),
+      ...Object.keys(state?.untracked ?? {}),
+      ...status.map(entry => entry.file),
+      ...status.filter(entry => entry.from).map(entry => entry.from),
+      ...committed.map(item => item.file),
+      ...committed.filter(item => item.from).map(item => item.from),
+    ]);
+
+    const evaluated = new Map();
+    for (const file of [...candidates].sort()) {
+      const entry = statusByFile.get(file) ?? null;
+      const baseline = baselineOf(file);
+      const currentIndexSha = index.get(file) ?? null;
+      const currentWt = fingerprintFile(path.join(root, file));
+      const indexChanged = currentIndexSha !== (baseline.index ?? null);
+      const worktreeChanged = !sameState(baseline.worktree ?? {status: 'missing', sha256: null, size: null}, currentWt);
+      evaluated.set(file, {indexChanged, worktreeChanged});
+
+      // The status arrays keep mirroring what Git reports; records are created separately.
+      if (entry) {
+        if (entry.x === '?') summary.untracked.push(file);
+        else {
+          if (entry.x !== ' ') summary.staged.push(file);
+          if (entry.y !== ' ') summary.unstaged.push(file);
+        }
+        if (entry.x === 'R' && entry.from) {
+          summary.renamed.push({from: entry.from, file, layer: 'index'});
+          summary.deleted.push(entry.from);
+        }
+        if (entry.x === 'D' || entry.y === 'D') summary.deleted.push(file);
+      }
+      if (committed.some(item => item.file === file && item.kind === 'D')) summary.deleted.push(file);
+
+      if (entry && entry.x === '?') {
+        // Untracked files produce a record only when their content moved from the baseline.
+        if (worktreeChanged) {
+          addChange({file, layer: 'untracked', kind: baseline.kind === 'untracked' ? 'modified' : 'added'},
+            worktreeView(root, file));
+        }
+        continue;
+      }
+
+      const committedFingerprint = committedFingerprints.get(file) ?? null;
+      let indexFingerprint = null;
+      if (indexChanged) {
+        const view = blobView(root, currentIndexSha);
+        indexFingerprint = view.fingerprint;
+        if (!sameFingerprint(indexFingerprint, committedFingerprint)) {
+          addChange({file, layer: 'index', kind: currentIndexSha ? 'modified' : 'deleted', oldPath: entry?.from ?? null}, view);
+        }
+      }
+      if (worktreeChanged) {
+        // A worktree that only matches the recorded index or commit is already covered by
+        // that layer; a worktree restored to a *pre-task* value is still a task change.
+        const explainedByIndex = sameFingerprint(currentWt, indexFingerprint);
+        const explainedByCommit = sameFingerprint(currentWt, committedFingerprint);
+        if (!explainedByIndex && !explainedByCommit) {
+          addChange({file, layer: 'worktree', kind: currentWt.status === 'missing' ? 'deleted' : 'modified', oldPath: entry?.from ?? null},
+            worktreeView(root, file));
+        }
+      }
+    }
+
+    // Baseline edits with no rendered layer are either proven unchanged (both comparisons
+    // succeeded) or moved in a way no rendered layer covers.
+    for (const file of [...Object.keys(state?.dirty ?? {}), ...Object.keys(state?.untracked ?? {})]) {
+      const info = evaluated.get(file);
+      if (!info) continue;
+      if (changes.some(change => change.file === file && change.layer !== 'baseline')) continue;
+      const scopeClass = scopeOf(file, scope);
+      if (info.indexChanged || info.worktreeChanged) {
+        changes.push({file, layer: 'baseline', kind: 'changed-unrendered', scope: scopeClass,
+          attribution: 'unknown', note: '检测到任务期间变化但无法归属到具体层，须协调者核对',
+          view: worktreeView(root, file)});
+        if (scopeClass === 'out') summary.out_of_scope.push({file, layer: 'baseline', attribution: 'unknown'});
+        else if (scopeClass === 'unscoped') summary.unscoped.push({file, layer: 'baseline', attribution: 'unknown'});
+        else summary.pre_existing_also_modified.push({file, layer: 'baseline', attribution: 'unknown'});
+        continue;
+      }
+      changes.push({file, layer: 'baseline', kind: 'unchanged', scope: scopeClass,
+        attribution: 'pre-existing', note: '任务开始时已改动，本次未变化', view: worktreeView(root, file)});
+      if (scopeClass === 'in') summary.pre_existing.push({file, layer: 'baseline', attribution: 'pre-existing'});
+      else if (scopeClass === 'out') summary.out_of_scope.push({file, layer: 'baseline', attribution: 'pre-existing'});
+      else summary.unscoped.push({file, layer: 'baseline', attribution: 'pre-existing'});
+    }
+    if (!state) notes.push('未提供基线快照：归属标为 unknown，材料列出当前全部变化，不声称验证过任务前归属。');
+  } else {
+    // Same manifest universe as snapshot(): a .git directory that Git itself cannot read
+    // (binary missing, broken repo) must not surface its internals as task additions.
+    const current = manifest(root, {skipGit: true});
+    const before = state?.files ?? null;
+    if (!state) notes.push('未提供基线快照：无 Git 模式下没有可比较的基线，无法检测任务期间的变化，第 3–7 节的空态均为“无法判定”而非“无变化”。');
+    if (before) {
+      for (const [file, fingerprint] of Object.entries(current)) {
+        if (!(file in before)) {
+          summary.untracked.push(file);
+          addChange({file, layer: 'untracked', kind: 'added'}, worktreeView(root, file));
+        } else if (!sameState(before[file], fingerprint)) {
+          summary.unstaged.push(file);
+          addChange({file, layer: 'worktree', kind: 'modified'}, worktreeView(root, file));
+        }
+      }
+      for (const file of Object.keys(before)) {
+        if (file in current) continue;
+        summary.deleted.push(file);
+        addChange({file, layer: 'worktree', kind: 'deleted'}, blobView(root, null));
+      }
+    }
+  }
+
+  summary.committed = [...new Set(summary.committed)];
+  summary.staged = [...new Set(summary.staged)];
+  summary.unstaged = [...new Set(summary.unstaged)];
+  summary.untracked = [...new Set(summary.untracked)];
+  summary.deleted = [...new Set(summary.deleted)].sort();
+  summary.renamed = summary.renamed.filter(Boolean);
+  for (const list of [summary.task, summary.pre_existing, summary.pre_existing_also_modified, summary.out_of_scope, summary.unscoped]) {
+    list.sort((a, b) => a.file.localeCompare(b.file) || a.layer.localeCompare(b.layer));
+  }
+  const lines = renderMaterial({root, requested, options, gitMode, baseInfo, currentHead, scope, state,
+    summary, changes, limits, notes, baselineOf, undetectable});
 
   // Section 5 can add integrity entries, so the status and its header line are finalised
   // together; summary and Markdown must never disagree.

@@ -4,7 +4,7 @@ description: 用于用户提出软件开发愿望、要求许愿式开发或续�
 license: "Proprietary"
 compatibility: "宿主 agent 软件需能派生出拥有独立执行上下文的执行体（子智能体或等价隔离子任务）；当前模型支持工具调用"
 metadata:
-  version: "2.3.4"
+  version: "2.3.5"
   language: "zh-CN"
   runtime: "宿主支持工具调用且能派生独立执行体（子智能体或等价隔离子任务）；Node 18+ 用于 plan 门禁与评审材料采集"
   tags: "development, orchestration, subagents, spec-driven, code-quality"
@@ -51,7 +51,7 @@ metadata:
 
 派发前读 [工作流与任务契约](references/workflow.md) 和 [计划门禁](references/plan-contract.md)，按其模板执行：
 
-- 主对话维护稳定 wish ID，复用现有账本位置，无则用 `wishes/<wish-id>/`。派发首个任务前落盘草稿 `prd.json` 与 `progress.md`；5 字段表头须连续、开头 40 行内开始、15 行内齐备，正式证据放 `evidence/`。
+- 主对话维护稳定 wish ID，复用现有账本位置，无则用 `wishes/<wish-id>/`。派发首个任务前落盘草稿 `prd.json` 与 `progress.md`；5 字段表头须为连续块（窗口与可接受写法见 [计划门禁](references/plan-contract.md)），正式证据放 `evidence/`。
 - 产品实现前、回退后、标 `done` 后及最终交付前运行 `node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"`。结构和账本双门禁未过不能进入产品实现；草稿期可先做只读调研并补齐证据，不伪填通过。门禁只证明结构，不执行验证、不证明事实。
 - 任务统一用 `T-<线>-<序号>`，账本 ID、下发/交付块与 `depends_on` 同号。每包明确负责人、AC、输入、写入范围、产物、依赖及验证方法；依赖未 `done` 不开始。同线编号不自动建立依赖。
 - 并行度按依赖、耦合、文件归属、风险、资源和用户预算动态选择，不设固定包数。公共契约、依赖清单、锁文件、迁移顺序由唯一集成线写；其他线只读，冲突先停相关写入再整合，不覆盖他人改动或重置用户工作区。

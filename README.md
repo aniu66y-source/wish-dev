@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.4**，发布后全量审查修复：无 Git 且无快照时空态改“无法判定”口径、修正失效章节名引用、补录 `--base` 文档，已发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.5**，发布后全量双轴审查全修：账本窗口口径对齐与规格去重、eval 评估状态更新、评审材料脚本双读与重复修复，未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.4](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.4)，发布于 2026-11-11（发布后全量审查修复：无 Git 且无快照时空态改“无法判定”口径、修正失效章节名引用、补录 `--base` 文档）。上一版 [2.3.3](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.3)
@@ -96,7 +96,7 @@
 | **修根因** | 先定位错误结构，不在错误结构上堆补丁/补偿分支/新旧竞争方案 |
 | **敏感凭据隔离** | 已授权的项目级非敏感配置按需补齐；密钥使用宿主支持的安全引用，涉及全局/账号/费用变化核对授权 |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
-| **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须为连续块：开头 40 行内开始、15 行内写完）；`check-plan.mjs` 缺账本或表头不成立即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
+| **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须为连续块，窗口与写法细则见 [plan-contract.md](references/plan-contract.md)）；`check-plan.mjs` 缺账本或表头不成立即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
 | **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions）；质量维度只报告不阻断，但 frontmatter、内部链接、JS 语法或 CRLF 行尾错误仍会 exit 1 |
 | **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
 
@@ -181,7 +181,7 @@ python -B -m unittest discover -s tools -p "test_*.py"
 
 ```bash
 # 账本门禁（CLI 入口）：结构校验通过后还检查同目录 progress.md
-# 缺失 → exit 2 + ledger:false + not_started；表头不连续/起点超出前 40 行/未在 15 行内写完 → exit 2 + ledger:false + 缺项名
+# 缺失 → exit 2 + ledger:false + not_started；表头不成块或超出窗口（细则见 plan-contract.md「账本落盘硬门禁」）→ exit 2 + ledger:false + 缺项名
 # 齐全 → exit 0 + ledger:true；用法错误 / 文件不存在 / 目录或不可读 / JSON 非法分别给出不同错误
 node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"
 

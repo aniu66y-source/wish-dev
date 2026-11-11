@@ -171,6 +171,12 @@ const ledgers={
   late:()=>pad(60)+ledgerHeader(),
   bold:()=>ledgerHeader().replace(/^- ([\w-]+)/gm,(line,key)=>`- **${key}**`),
   boldColon:()=>ledgerHeader().replace(/^- ([\w-]+)\s*:/gm,(line,key)=>`- **${key}:**`),
+  underscore:()=>ledgerHeader().replace(/^- ([\w-]+)/gm,(line,key)=>`- __${key}__`),
+  backtick:()=>ledgerHeader().replace(/^- ([\w-]+)/gm,(line,key)=>`- \`${key}\``),
+  quote:()=>ledgerHeader().replace(/^- /gm,'> - '),
+  bom:()=>'\uFEFF'+ledgerHeader(),
+  spanIn:()=>['- wish-id: W-01',...Array.from({length:10},()=>''),...fieldLines.slice(1)].join('\n')+'\n',
+  spanOut:()=>['- wish-id: W-01',...Array.from({length:11},()=>''),...fieldLines.slice(1)].join('\n')+'\n',
   ordered:()=>ledgerHeader().replace(/^- (.*)$/gm,(line,body)=>body).split('\n').map((line,i)=>line?`${i+1}. ${line}`:line).join('\n'),
   table:()=>table(),
   tableBold:()=>table({bold:true}),
@@ -243,8 +249,8 @@ test('documented Chinese ledger aliases and heading forms pass the gate',()=>{
     assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
   },{ledger:'zh'});
 });
-test('emphasised and table header forms pass the gate',()=>{
-  for(const ledger of ['bold','boldColon','ordered','table','tableBold'])cli(JSON.stringify(fixture()),result=>{
+test('documented emphasis, quote and table header forms pass the gate',()=>{
+  for(const ledger of ['bold','boldColon','underscore','backtick','quote','bom','ordered','table','tableBold'])cli(JSON.stringify(fixture()),result=>{
     const data=JSON.parse(result.stdout);
     assert.equal(data.ok,true,ledger);
     assert.equal(data.ledger,true,ledger);
@@ -262,6 +268,21 @@ test('blank lines between header fields are tolerated',()=>{
 });
 test('a header starting on line 40 is still accepted',()=>{cli(JSON.stringify(fixture()),result=>{const data=JSON.parse(result.stdout);assert.equal(data.ok,true);assert.equal(data.ledger,true);},{ledger:'boundaryIn'});});
 test('a header starting after line 40 is rejected',()=>{cli(JSON.stringify(fixture()),result=>{const data=JSON.parse(result.stdout);assert.equal(data.ledger,false);},{ledger:'boundaryOut'});});
+test('a header finishing on the 15th line from its start is accepted',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ok,true);
+    assert.equal(data.ledger,true);
+  },{ledger:'spanIn'});
+});
+test('a header needing a 16th line from its start is rejected',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,false);
+    assert.ok(data.errors[0].includes('ledger field missing: blocker'));
+    assert.ok(data.errors[0].includes('finishing within 15 lines'));
+  },{ledger:'spanOut'});
+});
 test('a markdown horizontal rule cannot bridge header fields',()=>{cli(JSON.stringify(fixture()),result=>{const data=JSON.parse(result.stdout);assert.equal(result.status,2);assert.equal(data.ledger,false);},{ledger:'horizontalRule'});});
 test('fields scattered through the log are not a header block',()=>{
   cli(JSON.stringify(fixture()),result=>{
@@ -329,23 +350,15 @@ const workRoot=()=>{
   return root;
 };
 function makeRepo(){
-  const dir=fs.mkdtempSync(path.join(workRoot(),'review-'));
-  const git=(...args)=>{
-    const result=spawnSync('git',args,{cwd:dir,encoding:'utf8'});
-    assert.equal(result.status,0,`git ${args.join(' ')}: ${result.stderr}`);
-    return result;
-  };
-  git('init','-q');git('config','user.email','eval@example.invalid');
-  git('config','user.name','eval');git('config','core.autocrlf','false');
-  const write=(name,body)=>{
-    fs.mkdirSync(path.dirname(path.join(dir,name)),{recursive:true});
-    fs.writeFileSync(path.join(dir,name),body);
-  };
-  write('src/a.js','const a=1\n');write('src/keep.js','const k=1\n');
-  write('src/unstaged.js','const u=1\n');write('src/userdirty.js','const x=1\n');
-  write('docs/note.md','note one\n');
-  git('add','-A');git('commit','-q','-m','base');
-  return {dir,git,write};
+  // The classic layer-coverage fixture: one file per layer the tests expect, on top of
+  // the shared initRepo setup (init + config + write + base commit).
+  return initRepo({
+    'src/a.js':'const a=1\n',
+    'src/keep.js':'const k=1\n',
+    'src/unstaged.js':'const u=1\n',
+    'src/userdirty.js':'const x=1\n',
+    'docs/note.md':'note one\n'
+  });
 }
 const runTool=args=>spawnSync(process.execPath,[reviewScript,...args],{encoding:'utf8'});
 
@@ -467,6 +480,27 @@ test('without Git, snapshots and fingerprints cover additions, edits and deletio
     fs.rmSync(dir,{recursive:true,force:true});
     fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
   }
+});
+
+test('non-Git collect keeps a bogus .git out of the manifest like snapshot does', () => {
+  const dir = fs.mkdtempSync(path.join(workRoot(), 'nogit-dotgit-'));
+  const snap = path.join(workRoot(), path.basename(dir) + '-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-material.md');
+  try {
+    // A garbage gitfile makes git reject the directory, so collect runs in non-Git mode
+    // while a .git entry still exists on disk.
+    fs.writeFileSync(path.join(dir, '.git'), 'garbage\n');
+    fs.mkdirSync(path.join(dir, 'src'), {recursive: true});
+    fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'a\n');
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    fs.writeFileSync(path.join(dir, 'src', 'b.js'), 'b\n');
+    const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.deepEqual(data.untracked, ['src/b.js']);
+    const listed = [...data.untracked, ...data.unstaged, ...data.deleted,
+      ...data.out_of_scope.map(entry => entry.file), ...data.unscoped.map(entry => entry.file)];
+    assert.ok(!listed.some(file => file === '.git' || file.startsWith('.git/')),
+      'the .git entry must stay out of the collect manifest, as it does in snapshot');
+  } finally { wipe(dir, snap, out); }
 });
 
 test('review scope globs stay segment aware',()=>{

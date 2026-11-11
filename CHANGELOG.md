@@ -3,6 +3,23 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.5 — 2026-11-11
+
+未发布（收口提交，发布后更新本行与 Release 链接）。本版为 2.3.4 发布后的第二次全量双轴审查（标准轴：仓库约定 + 代码异味基线；规格轴：规格一致性与文档）发现问题的全量修复：文档口径对齐、规格去重与脚本维护性清理，门禁判定行为不变。
+
+- **账本 15 行窗口口径差一对齐**：`plan-contract.md` 原写「起始行之后 15 行内齐备」，而 `check-plan.mjs` 实扫自起始行起共 15 行（含起始行），按文档字面会放行被代码拒绝的表头；README/workflow 的「15 行内写完」与代码一致，plan-contract 是唯一异读文档。已统一为「起始行起的 15 行内（含起始行）」，新增 15/16 行边界测试 2 项锁定该行为。
+- **账本可接受写法补录**：门禁实际接受但未记载的形式写入 plan-contract.md——`>` 引用前缀、`__key__`/反引号强调（冒号在标记内外均可）、`#`–`######` 标题、半角/全角冒号、文件开头 BOM 容错；对应扩展表头形式用例（underscore/backtick/quote/BOM）。
+- **规格去重（账本窗口四处重复）**：5 字段/40 行/15 行窗口原先在 SKILL.md、workflow.md、README（两处）完整重复，调整须同步四处；现按 workflow.md 已确立的「材料口径一律见 plan-contract 不重复」原则收敛为 plan-contract.md 单一出处，其余三处改为引用（2.3.3 曾因预算措辞分散被迫双处修补，属同类症状）。
+- **evidence 冒号口径**：plan-contract.md「不含盘符」改为「不含任何冒号（含盘符 `C:`）」并注明反斜杠归一，与 `check-plan.mjs` 按 `:` 字符拒绝的实现一致（实现严于原文档，属安全方向对齐）。
+- **eval 评估状态更新**：`tools/eval/README.md`「已发布版本的评估状态」原止于 2.3.3，未覆盖 2.3.4；现更新至当前版，并如实记录 2.3.4 修改 `--base` 契约措辞处于「何时跑」触发边缘、因未获得隔离会话与重复采样条件未运行（采样数 0），不默认豁免。
+- **非 Git 模式 `.git` 口径对齐**：`collect` 的文件清单原用 `skipGit:false` 而 `snapshot` 用 `skipGit:true`——Git 不可用但 `.git` 存在时，快照不含 `.git`、collect 却把其内部文件列为新增，前后互斥。现统一 `skipGit:true`，plan-contract.md 补记该口径，新增伪 `.git`（垃圾 gitfile）回归测试。
+- **评审材料脚本维护性修复**：同一 blob 在 `blobFingerprint` 与 `blobView` 中各读一次 `cat-file -p`，改为最近 blob 正文单缓存（指纹与视图共用一次读取，内存有界）；`git`/`gitBuffer` 除编码参数外完全相同，合并为 `git(cwd, args, encoding)`；`collect` 约 575 行混载采集语义与 Markdown 渲染，渲染段整体拆出独立 `renderMaterial()`（同文件，纯展示职责），后续空态措辞调整只触碰渲染函数。
+- **门禁脚本命名**：`check-plan.mjs` 的 `ledgerLine` 返回归一化字符串而非布尔，更名 `normalizeLedgerLine`，行为不变。
+- **测试夹具去重**：`tools/test_plan.mjs` 的 `makeRepo` 与 `initRepo` 两套近似仓库夹具（init/config/write/commit 逻辑相同）合并，`makeRepo` 改为以固定文件集调用 `initRepo`。
+- **契约锚点数补记**：2.2.0 记 `contracts` 为 13 个锚点，当前 `package_skill.py` 实为 17 个（SKILL.md 8 + workflow.md 5 + plan-contract.md 4），2.3.0–2.3.4 期间增删未单独记载；本条目补记实际数量，后续锚点增删随版本条目记录。
+- **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 119 项通过（116 + 新增 3：15/16 行边界 2、伪 `.git` 清单 1）；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。
+- 本轮为文档口径与脚本维护性修订：账本窗口以代码现有行为为基准对齐文档，不改变门禁判定与模型行为指引；按 eval README 口径未跑 RED/GREEN 行为采样，不宣称行为评估通过。
+
 ## 2.3.4 — 2026-11-11
 
 已正式发布：[v2.3.4](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.4)。本版为 2.3.3 发布后的全量双轴审查（标准轴：仓库约定 + 代码异味基线；规格轴：规格一致性与文档）发现的残留缺陷修复与文档补录。发布不等于已安装到宿主。
