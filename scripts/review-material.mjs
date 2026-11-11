@@ -97,20 +97,34 @@ function canonicalRepo(repo, gitMode) {
     if (top) return path.resolve(top);
   }
   try {
-    return path.resolve(fs.realpathSync(repo));
+    return resolveReal(repo);
   } catch {
     return path.resolve(repo);
   }
 }
 
-// Resolve symlinks for the deepest existing ancestor and append the not-yet-existing tail,
-// so a link pointing back into the repository is detected even before the target exists.
+// fs.realpathSync leaves Windows 8.3 short names (C:\PROGRA~1) unexpanded, while
+// fs.realpathSync.native (GetFinalPathNameByHandle) resolves them — and so does Git's
+// --show-toplevel. A repository reached through a short-named TMP (CI runners use
+// C:\Users\RUNNER~1) would compare unequal to the same path spelled in full, and the
+// output guard would fail open. Every side of a comparison therefore resolves through
+// the expanding resolver so the spellings agree.
+function realPath(file) {
+  const real = process.platform === 'win32' ? fs.realpathSync.native(file) : fs.realpathSync(file);
+  // Drop the extended-length prefix realpathSync.native may keep, so plain
+  // path.relative / startsWith logic stays correct.
+  return real.replace(/^\\\\\?\\UNC\\/, '\\\\').replace(/^\\\\\?\\/, '');
+}
+
+// Resolve symlinks (and Windows 8.3 short names) for the deepest existing ancestor and
+// append the not-yet-existing tail, so a link pointing back into the repository is
+// detected even before the target exists.
 function resolveReal(target) {
   let current = path.resolve(target);
   const pending = [];
   for (;;) {
     try {
-      return path.join(fs.realpathSync(current), ...pending.reverse());
+      return path.join(realPath(current), ...pending.reverse());
     } catch {
       const parent = path.dirname(current);
       if (parent === current) return path.resolve(target);
@@ -1187,4 +1201,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 }
 
-export {snapshot, collect, globToRegExp, parseArgs};
+export {snapshot, collect, globToRegExp, parseArgs, resolveReal};

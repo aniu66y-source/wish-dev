@@ -503,6 +503,55 @@ test('non-Git collect keeps a bogus .git out of the manifest like snapshot does'
   } finally { wipe(dir, snap, out); }
 });
 
+test('resolveReal expands Windows 8.3 short-name components', t => {
+  if (process.platform !== 'win32') { t.skip('Windows-specific behaviour'); return; }
+  const probe = 'C:\\PROGRA~1';
+  if (!fs.existsSync(probe)) { t.skip('C:\\PROGRA~1 not present on this machine'); return; }
+  const expanded = review.resolveReal(probe);
+  assert.ok(!/~\d/.test(expanded), 'the 8.3 alias must be expanded: ' + expanded);
+  assert.equal(expanded.toLowerCase(), fs.realpathSync.native('C:\\Program Files').toLowerCase());
+});
+
+test('the output guard holds when the sandbox path carries an 8.3 short name', t => {
+  if (process.platform !== 'win32') { t.skip('Windows-specific behaviour'); return; }
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const longBase = fs.mkdtempSync(path.join(workRoot(), 'eight-three-probe-'));
+  const repo = path.join(longBase, 'repo');
+  const snap = path.join(workRoot(), path.basename(longBase) + '-snap.json');
+  try {
+    // Ask the filesystem for the 8.3 alias of the fresh sandbox directory.
+    const ps = spawnSync('powershell.exe',
+      ['-NoProfile', '-Command',
+        `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${longBase.replaceAll("'", "''")}').ShortPath`],
+      {encoding: 'utf8'});
+    const shortBase = (ps.stdout || '').trim();
+    if (!shortBase.includes('~')) {
+      t.diagnostic('no 8.3 alias generated on this volume; end-to-end short-name guard not exercised');
+      return;
+    }
+    const git = (...args) => {
+      const result = spawnSync('git', args, {cwd: repo, encoding: 'utf8'});
+      assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
+      return result;
+    };
+    fs.mkdirSync(repo, {recursive: true});
+    git('init', '-q'); git('config', 'user.email', 'eval@example.invalid');
+    git('config', 'user.name', 'eval'); git('config', 'core.autocrlf', 'false');
+    fs.mkdirSync(path.join(repo, 'src'), {recursive: true});
+    fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'a\n');
+    git('add', '-A'); git('commit', '-q', '-m', 'base');
+    // git canonicalises the short spelling to the expanded form; the guard must still
+    // recognise an in-repository --out written with the short spelling (CI runners hit
+    // this via C:\Users\RUNNER~1 in TMP).
+    const shortRepo = path.join(shortBase, 'repo');
+    assert.equal(runTool(['snapshot', '--repo', shortRepo, '--out', snap, '--scope', 'src/**']).status, 0);
+    const inside = runTool(['collect', '--repo', shortRepo, '--out', path.join(shortRepo, 'material.md'), '--snapshot', snap]);
+    assert.equal(inside.status, 2, 'an in-repository --out must be refused even in 8.3 spelling');
+    assert.ok(JSON.parse(inside.stdout).errors.some(message => message.includes('outside the repository')));
+    assert.equal(fs.existsSync(path.join(repo, 'material.md')), false, 'no file may be created inside the repository');
+  } finally { wipe(longBase, snap); }
+});
+
 test('review scope globs stay segment aware',()=>{
   assert.ok(review.globToRegExp('src/**').test('src/a/b.js'));
   assert.ok(!review.globToRegExp('src/*.js').test('src/a/b.js'));

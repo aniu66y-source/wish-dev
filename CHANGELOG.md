@@ -3,6 +3,16 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.6 — 2026-11-11
+
+未发布（收口提交，发布后更新本行与 Release 链接）。本版修复 2.3.5 新增 Windows CI 矩阵后暴露的输出守卫 fail-open 缺陷。
+
+- **输出守卫在 8.3 短名路径下 fail-open（CI 实测发现）**：GitHub windows runner 的 TMP 含 8.3 短名组件（`C:\Users\RUNNER~1`）。`git rev-parse --show-toplevel` 把短名展开为完整拼写，而 Node `fs.realpathSync` 不展开；`assertSafeOutput` 两侧拼写不一致时把仓库内 `--out` 误判为仓库外，`collect` 会把材料写进仓库，违背只读采集承诺。修复：新增 `realPath`（Windows 用 `fs.realpathSync.native`——GetFinalPathNameByHandle，展开短名并返回规范大小写），`resolveReal` 与 `canonicalRepo` 非 Git 分支统一走该解析器，比较两侧拼写恒一致。本地以 `E:\CLAUDE~1`（含空格目录的 8.3 别名）复现：旧代码 exit 0 且材料真实写入仓库内，修复后 exit 2 正确拒绝。
+- **回归测试 ×2**：`resolveReal` 对 `C:\PROGRA~1` 的展开单元用例；端到端短名守卫用例（PowerShell FSO 取沙箱 8.3 别名，无别名卷带诊断跳过），累计 121 项 Node 测试。
+- **Windows 矩阵首跑即抓到该缺陷**：2.3.5 的 windows-latest job 失败（ubuntu 通过；本地 Windows 因路径无短名组件而全绿），直接验证了双平台矩阵的价值。
+- **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 121 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。
+- **兼容性说明**：非 Git 模式下，2.3.5 及之前版本生成的快照若位于 8.3 短名路径，与新版 `collect` 做仓库身份比对时可能因拼写不同被拒（按「另一仓库」处理），重拍快照即可；Git 模式不受影响（两侧均由 Git 规范化）。
+
 ## 2.3.5 — 2026-11-11
 
 已正式发布：[v2.3.5](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.5)。本版为 2.3.4 发布后的第二次全量双轴审查（标准轴：仓库约定 + 代码异味基线；规格轴：规格一致性与文档）发现问题的全量修复：文档口径对齐、规格去重与脚本维护性清理，门禁判定行为不变。

@@ -4,7 +4,7 @@ description: 用于用户提出软件开发愿望、要求许愿式开发或续�
 license: "Proprietary"
 compatibility: "宿主 agent 软件需能派生出拥有独立执行上下文的执行体（子智能体或等价隔离子任务）；当前模型支持工具调用"
 metadata:
-  version: "2.3.5"
+  version: "2.3.6"
   language: "zh-CN"
   runtime: "宿主支持工具调用且能派生独立执行体（子智能体或等价隔离子任务）；Node 18+ 用于 plan 门禁与评审材料采集"
   tags: "development, orchestration, subagents, spec-driven, code-quality"

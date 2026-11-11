@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.5**，发布后全量双轴审查全修：账本窗口口径对齐与规格去重、CI Windows 矩阵、契约锚点补强、评审材料脚本双读与重复修复，已发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.6**，修复 Windows CI 暴露的输出守卫 8.3 短名 fail-open 缺陷，未发布）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.5](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.5)，发布于 2026-11-11（全量双轴审查全修：账本窗口口径对齐与规格去重、脚本双读/重复收敛、CI Windows 矩阵、契约锚点 17→19）。上一版 [2.3.4](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.4)
