@@ -164,17 +164,29 @@ function fingerprintFile(file) {
 }
 
 const blobCache = new Map();
-// The most recent blob body: fingerprinting and viewing the same blob read it once
-// instead of running `cat-file -p` twice per SHA. A single-entry memo keeps memory
-// bounded (one blob at most BLOB_LIMIT) while covering the fingerprint-then-view
-// sequence every caller follows.
-let lastBlobBody = {sha: null, buffer: null};
+// Small LRU of recent blob bodies: fingerprinting and viewing the same blob share one
+// `cat-file -p` read even when other blobs are processed in between. Only bodies up to
+// BODY_CACHE_LIMIT bytes are kept and at most BODY_CACHE_ENTRIES at a time, so a few
+// huge blobs cannot balloon memory (they are simply re-read when needed).
+const BODY_CACHE_LIMIT = 4 * 1024 * 1024;
+const BODY_CACHE_ENTRIES = 8;
+const blobBodyCache = new Map();
 
 function blobBody(repo, sha) {
-  if (lastBlobBody.sha === sha) return lastBlobBody.buffer;
+  if (blobBodyCache.has(sha)) {
+    const buffer = blobBodyCache.get(sha);
+    blobBodyCache.delete(sha);
+    blobBodyCache.set(sha, buffer);  // refresh LRU position
+    return buffer;
+  }
   const result = git(repo, ['cat-file', '-p', sha], null);
   if (result.status !== 0) return null;
-  lastBlobBody = {sha, buffer: result.stdout};
+  if (result.stdout.length <= BODY_CACHE_LIMIT) {
+    blobBodyCache.set(sha, result.stdout);
+    if (blobBodyCache.size > BODY_CACHE_ENTRIES) {
+      blobBodyCache.delete(blobBodyCache.keys().next().value);  // evict the least recent
+    }
+  }
   return result.stdout;
 }
 
@@ -517,7 +529,7 @@ function readSnapshot(file, {repo, mode, options}) {
     const left = [...options.scope].sort();
     const right = [...(state.scope ?? [])].sort();
     if (left.join('\n') !== right.join('\n')) {
-      throw new Error('collect scope differs from the baseline snapshot scope; take a new snapshot instead of widening silently: '
+      throw new Error('collect scope differs from the baseline snapshot scope; take a new snapshot instead of changing the scope silently: '
         + JSON.stringify(right) + ' -> ' + JSON.stringify(left));
     }
   }

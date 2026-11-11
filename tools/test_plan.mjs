@@ -526,7 +526,7 @@ test('the output guard holds when the sandbox path carries an 8.3 short name', t
       {encoding: 'utf8'});
     const shortBase = (ps.stdout || '').trim();
     if (!shortBase.includes('~')) {
-      t.diagnostic('no 8.3 alias generated on this volume; end-to-end short-name guard not exercised');
+      t.skip('no 8.3 alias generated on this volume; end-to-end short-name guard not exercised');
       return;
     }
     const git = (...args) => {

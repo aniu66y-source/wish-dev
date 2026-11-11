@@ -3,6 +3,19 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.7 — 2026-11-11
+
+未发布（收口提交，发布后更新本行与 Release 链接）。本版为 2.3.6 后的第三轮全量双轴审查（标准轴 + 规格轴，27 文件全覆盖）修复：无硬违规与实质代码缺陷，修复对象为文档口径、统计措辞与一处缓存收益补全。
+
+- **勘误 2.3.5 的 GREEN 采样计数**：原文「其余 3 个中止」漏计 1 个——实际为 1 个完整样本（通过）+ 4 个中止（3 个中止前文件证据为先账本后代码，1 个无落盘、回报不可验证）。已在 2.3.5 条目内就地更正并标注勘误。
+- **eval 评估状态更新至 2.3.6**：2.3.6 为脚本缺陷修复、不改变模型行为指引，未触发评估条件，如实记录；README「验证范围」行同步改为「行为采样仅于 2.3.5 部分运行」，与 CHANGELOG 记录对齐。
+- **契约补录**：plan-contract.md 输出守卫条款补记 Windows 8.3 短名展开与「比较两侧统一为展开后的规范拼写」（2.3.6 已实现的行为）；账本字段名补记「大小写不敏感」（门禁正则本就 `/i`，宽容方向）；README 输出守卫注释同步。
+- **scope 报错措辞**：`collect` 的 scope 差异报错原写「instead of widening silently」，实际收窄同样被拒；改为中性的「instead of changing the scope silently」。
+- **8.3 端到端用例统计口径**：无 8.3 别名的卷上原以 `t.diagnostic` + return 提前返回，node --test 计为通过；改为 `t.skip`，不再混入通过计数。
+- **blob 缓存收益补全**：`blobBody` 由单条记忆升级为有界 LRU（≤4MB/条、≤8 条，约 32MB 上限），指纹与视图之间的穿插读取序列也能命中，大 blob 不缓存、按需重读。
+- **评估后不改（记录依据，沿用 2.3.4 惯例）**：①`renderMaterial` 的「14 个参数」实为单对象解构参数（长参数表的标准解法已在位），再按关注点分组属装饰性改动；②`collect` 的归属 summary 数组与 changes 记录双轨——baseline 层记录刻意绕过 `addChange` 的丢弃规则，统一两轨需触碰归属判定这一正确性敏感区，回归风险大于去重收益。
+- **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 121 项通过；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。本版无模型行为指引变更，按 eval README 口径未跑 RED/GREEN 行为采样。
+
 ## 2.3.6 — 2026-11-11
 
 已正式发布：[v2.3.6](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.6)。本版修复 2.3.5 新增 Windows CI 矩阵后暴露的输出守卫 fail-open 缺陷。
@@ -30,7 +43,7 @@
 - **CI 增加 Windows 矩阵**：`ci.yml` 的 check job 改为 ubuntu-latest + windows-latest 双矩阵。盘符/反斜杠归一、BOM 容错、junction/symlink 输出守卫等行为此前只在本地 Windows 验证，现在两个平台都跑同一组三条门禁。
 - **验证**：`package_skill.py --check` PASS；`node --test tools/test_plan.mjs` 119 项通过（116 + 新增 3：15/16 行边界 2、伪 `.git` 清单 1）；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过。
 - **发布**：Release 附 `wish-dev-2.3.5.zip` / `.manifest.json` / `.zip.sha256` 三件套；发布 ZIP 12 成员与发布提交 git 内容逐字节一致、全 LF、manifest 无本机绝对路径，发布后已下载附件复算摘要一致。不宣称行为评估或跨宿主验收通过；发布不等于已安装到宿主。
-- **行为评估（缩减版，发布前尝试，不宣称通过）**：按 eval README 方法在本宿主跑了 SC-02 变体 A 与 SC-05 主变体的部分采样。SC-02A RED 5/5 完成且全部违规（无账本直接写码，痛点确认真实）；SC-05 RED 5/5 完成且全部通过（不归零、不换壳、拒绝绕过验签、推进独立线）；SC-02A GREEN 因宿主隔离失效（并行采样代理同团队互见、可见共享任务列表）仅 1 个完整样本（通过：先账本后门禁、独立复跑 check-plan 为真、无派生能力时按技能降级为计划并如实标 blocked），其余 3 个中止（中止前文件证据均为先账本后代码，其中 1 个真实采集了 review-material 基线）；SC-05 GREEN 未运行。另实证两项宿主限制：采样隔离不可得、子智能体无再派生能力（SC-01 派发判据在本宿主不可评测）。完整 GREEN 样本不足 5 次，不宣称行为评估通过；原始记录在运行根，不入库。
+- **行为评估（缩减版，发布前尝试，不宣称通过）**：按 eval README 方法在本宿主跑了 SC-02 变体 A 与 SC-05 主变体的部分采样。SC-02A RED 5/5 完成且全部违规（无账本直接写码，痛点确认真实）；SC-05 RED 5/5 完成且全部通过（不归零、不换壳、拒绝绕过验签、推进独立线）；SC-02A GREEN 因宿主隔离失效（并行采样代理同团队互见、可见共享任务列表）仅 1 个完整样本（通过：先账本后门禁、独立复跑 check-plan 为真、无派生能力时按技能降级为计划并如实标 blocked），另 4 个中止：3 个中止前文件证据均为先账本后代码（其中 1 个真实采集了 review-material 基线），1 个无落盘、回报不可验证（2.3.7 勘误：原写「其余 3 个中止」，漏计无落盘的 1 个）；SC-05 GREEN 未运行。另实证两项宿主限制：采样隔离不可得、子智能体无再派生能力（SC-01 派发判据在本宿主不可评测）。完整 GREEN 样本不足 5 次，不宣称行为评估通过；原始记录在运行根，不入库。
 
 ## 2.3.4 — 2026-11-11
 
