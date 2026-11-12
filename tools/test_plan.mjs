@@ -1226,7 +1226,7 @@ test('output guard refuses repository paths including a ..name directory', t => 
       linked = false;
     }
     if (!linked) {
-      t.diagnostic('junction/symlink creation unavailable on this platform: link guard not executed');
+      t.skip('junction/symlink creation unavailable on this platform: link guard not exercised');
     } else {
       const viaLink = path.join(link, 'material.md');
       const result = runTool(['collect', '--repo', dir, '--out', viaLink, '--snapshot', snap]);
