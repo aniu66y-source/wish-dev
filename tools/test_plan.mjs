@@ -922,6 +922,10 @@ test('without Git the material shows before/after fingerprints and current conte
     assert.ok(material.includes('基线指纹') && material.includes('当前指纹'));
     const digests = [...material.matchAll(/[0-9a-f]{12}…/g)].map(match => match[0]);
     assert.ok(new Set(digests).size >= 2, 'before and after digests must be distinguishable');
+    assert.ok(material.includes('BASE：不适用（无 Git，按前后文件清单与指纹比较）'),
+      'non-Git material must not print Git-only BASE concepts');
+    assert.ok(!material.includes('空树'), 'the Git empty-tree wording must not leak into non-Git material');
+    assert.ok(!material.includes('基线 无提交'), 'a non-Git snapshot has no baseline commit to report');
   } finally { wipe(dir, snap, out); }
 });
 

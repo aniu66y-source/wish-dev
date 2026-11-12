@@ -3,6 +3,19 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.10 — 2026-11-12
+
+已正式发布：[v2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)。第六轮全面审查修复：1 个 P3 脚本显示缺陷 + 1 处 P3 报错措辞 + 2 处 P3 文档口径。发布不等于已安装到宿主。
+
+- **P3-1：无 Git 模式材料头部不再使用 Git 概念**：`review-material.mjs` 在无 Git + 有快照时，材料头部写「BASE：空树（快照记录当时无提交）」与「基线 无提交」——「空树」「提交」是 Git 专属概念，而模式行已声明「无 Git（文件清单与指纹）」，属 2.3.3/2.3.4 修复过的「材料陈述准确性」同类残留。现改为「BASE：不适用（无 Git，按前后文件清单与指纹比较）」与「基线 无 Git」；JSON 语义不变（`base` 仍为 `null`），既有无 Git 用例补 3 条头部断言（测试数不变）。
+- **P3-2：补录无快照 BASE 回退口径**：`collect` 无快照且未指定 `--base` 时 `BASE` 回退为**当前 HEAD**（材料头部如实显示，第 1 节提交差异恒为空），此前 plan-contract/README 未记载该回退；已在 plan-contract「评审材料与基线」身份校验条补录，并明示「归属仍 unknown，不能把回退的 BASE 当作已核对基线」。按单一出处原则 README 不重复。
+- **P3-3：账本报错窗口措辞补「含起始行」**：`check-plan.mjs` 的 `ledger field missing` 报错原压缩为「finishing within 15 lines」，丢失 plan-contract 口径「起始行起的 15 行内（含起始行）」的限定，字面可被误读为「起始行之后 15 行」；措辞对齐（`finishing within 15 lines of the start line (including the start line)`），行为不变，15/16 行边界测试原样通过。
+- **P3-4：eval README 失效前缀修正**：「已发布版本的评估状态」段原以「截至 2.3.7：场景判据维持 2.3.3 拆分后的口径」起句，而同段已含 2.3.8/2.3.9 记录且 2.3.9 新增 SC-06 场景，前缀失效；改为「至 2.3.7 未再变更；2.3.9 新增 SC-06（判据见 sc-06-silence.md）」。同段补记「2.3.10 未触发评估（采样数 0）」，延续 2.3.8 起的逐版记录惯例。
+- **本轮审查基线**（修复前实测，与 2.3.9 记录一致）：`--check` PASS（12 文件、44 链接、2 个 .mjs）；node 122 通过（0 skip，链接守卫真实执行）；Python 19 通过；`git diff --check` 干净；全仓 LF；工作区干净且与 origin/main 同步于 `1fbece8`。
+- **评估触发**：本版全部为显示修复与已实现行为的文档补录，不改变模型行为指引，按 eval README 豁免口径未触发 RED/GREEN（采样数 0）。
+- **验证**：修复后重跑全绿——`package_skill.py --check` PASS（12 文件、44 链接、2 个 .mjs，7 维全 PASS、无 drift/gap）；`node --test tools/test_plan.mjs` 122 项通过（0 skip，无 Git 头部断言与既有 15/16 行边界用例全部在位）；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；`git diff --check` 干净，改动文件全 LF。
+- **发布**：Release 附 `wish-dev-2.3.10.zip` / `.manifest.json` / `.zip.sha256` 三件套；三件套从发布提交的隔离副本生成，12 成员、全 LF、manifest 不含本机绝对路径。不宣称行为评估或跨宿主验收通过；发布不等于已安装到宿主。
+
 ## 2.3.9 — 2026-11-12
 
 已正式发布：[v2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)。用户实测回归修复：2.3.0 子智能体执行期间不向主对话回报，2.3.3 起执行期间不断回报、撑爆主对话上下文。根因是 2.3.2 的 SKILL.md 入口精简（提交 `6845204`，-123 行）删掉了全部执行期静默表述，且剩余条款字面不禁止「子智能体执行期间向主对话发消息」（「互发消息」只覆盖子↔子，「完成后回传」只约束结束态），叠加 P0 每轮调度硬规则把每条中间消息放大为主对话完整响应。本版恢复该契约并修得比 2.3.0 更完备（2.3.0 也只写了「主对话不回放」，未显式禁止子→主执行期消息）。发布不等于已安装到宿主。

@@ -212,7 +212,7 @@ function ledgerStatus(file){
     }
   }
   const missing=LEDGER_FIELDS.map(([name])=>name).filter(name=>!found.has(name));
-  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs one contiguous 5-field header starting within the first ${LEDGER_HEADER_START} lines and finishing within ${LEDGER_HEADER_SPAN} lines)`]:[]};
+  return {ok:!missing.length,errors:missing.length?[`ledger field missing: ${missing.join(', ')} (progress.md needs one contiguous 5-field header starting within the first ${LEDGER_HEADER_START} lines and finishing within ${LEDGER_HEADER_SPAN} lines of the start line (including the start line))`]:[]};
 }
 
 function planFailure(message,kind){

@@ -605,10 +605,12 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
   if (!samePath(requested, root)) lines.push(`- 采集入口：${requested}（已规范化为仓库根）`);
   lines.push(`- 模式：${gitMode ? 'git' : '无 Git（文件清单与指纹）'}`);
   lines.push(`- 分支：${gitMode ? branch(root) ?? '（未知）' : '不适用'}`);
-  lines.push(`- BASE：${baseInfo.kind === 'empty' ? '空树（快照记录当时无提交）' : baseInfo.sha ?? '（无）'}`);
+  lines.push(gitMode
+    ? `- BASE：${baseInfo.kind === 'empty' ? '空树（快照记录当时无提交）' : baseInfo.sha ?? '（无）'}`
+    : '- BASE：不适用（无 Git，按前后文件清单与指纹比较）');
   lines.push(`- HEAD：${currentHead ?? '（无提交）'}`);
   lines.push(`- 任务写入范围（scope）：${scope.mode === 'declared' ? scope.patterns.join('、') : scope.mode === 'empty' ? '（显式空：本任务不写产品文件）' : '（未声明：材料按未归属列示）'}`);
-  lines.push(`- 基线快照：${state ? state.created_at + '（' + state.mode + '，基线 ' + (state.base ?? '无提交') + '）' : '未提供'}`);
+  lines.push(`- 基线快照：${state ? state.created_at + '（' + state.mode + '，基线 ' + (state.base ?? (gitMode ? '无提交' : '无 Git')) + '）' : '未提供'}`);
   lines.push(`- 完整性：${summary.integrity.status}${limits.length ? '（' + limits.length + ' 项见第 8 节）' : ''}`);
   lines.push(`- 采集时间：${new Date().toISOString()}`, '');
   lines.push('## 机器已核对 / 须协调者核对', '');

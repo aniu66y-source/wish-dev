@@ -17,10 +17,10 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.9**，修复执行期回报回归：恢复并强化「执行期静默」契约（P0）、补回上下文隔离条款、新增 SC-06 评估场景，已发布）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.10**，已发布：第六轮审查修复——无 Git 材料头部去 Git 概念、补录无快照 BASE 回退口径、账本报错窗口措辞对齐）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 最新正式版：[2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)，发布于 2026-11-12（执行期静默回归修复）。上一版 [2.3.8](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.8)（第五轮审查修复：snapshot 拒绝覆盖既有基线）
+- 最新正式版：[2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)，发布于 2026-11-12（第六轮审查 P3 修复：无 Git 材料头部去 Git 概念）。上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
 - 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），见 [行为评估](tools/eval/README.md)，不能据此宣称跨宿主或全部行为验收通过
 
 ---
@@ -46,7 +46,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前正式版为 2.3.9），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（当前正式版为 2.3.10），按宿主规则导入 |
 | 目录复制 | 解压 Release ZIP，将其中完整 `wish-dev/` 目录复制到宿主 skills 目录；不要只拷 SKILL.md，也不要把整个源码仓库当安装包 |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
