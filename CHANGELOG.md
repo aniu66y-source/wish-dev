@@ -5,7 +5,7 @@
 
 ## 2.3.12 — 2026-11-13
 
-未发布（无 tag）。第六轮审查 P2 缺陷收口：1 个数据泄露向修复 + 回归测试。发布不等于已安装到宿主。
+已正式发布：[v2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)。第六轮审查 P2 缺陷收口：1 个数据泄露向修复 + 回归测试。发布不等于已安装到宿主。
 
 - **P2-1：Git 模式指纹不再经链接读取仓库外字节**：`fingerprintFile` 原用 `fs.statSync` 跟随链接——未跟踪/脏条目若其路径的叶子是符号链接或中间组件是 Windows 联接点，工作区指纹会散列（进而在正文展开时展示）仓库外文件的内容。本机实测复现：快照后在仓库内建联接点，Git for Windows 将其当普通目录枚举，collect 列出联接点下的条目并完整展开正文（仓库外 token 出现在材料中，integrity 反而 complete）。修复分两层：`fingerprintFile` 改用 `fs.lstatSync`，链接自身返回 `{status:'link'}`；新增 `hasLinkAncestor`/`fingerprintPath`，Git 侧 5 个调用点（worktreeView、snapshot 的 untracked/dirty/rename-from、collect 的 evaluated 现值）先逐级 lstat 入口路径的中间组件，命中即以 `link` 状态记录。两种模式下工作区指纹一律不读取链接目标；`link` 记入 `integrity.limits`、状态转 `incomplete`，正文与摘要都不含目标字节。无 Git 清单路径不受影响（manifest 遍历已有显式守卫，叶子链接经 lstat 同样只记 link）。
 - **文档**：plan-contract「评审材料与基线」无 Git 口径句补两模式统一不读链接目标及逐级组件校验表述；`link` 加入限制枚举。
@@ -15,7 +15,7 @@
 
 ## 2.3.11 — 2026-11-12
 
-未发布（无 tag）。第六轮审查缺陷专项收口：1 个 P3 健壮性缺口修复 + 回归测试。发布不等于已安装到宿主。
+未单独发版（无 tag，内容随 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12) 一并发布）。第六轮审查缺陷专项收口：1 个 P3 健壮性缺口修复 + 回归测试。发布不等于已安装到宿主。
 
 - **P3-1：无 Git 清单显式跳过重解析点（目录符号链接/Windows 联接点）**：`manifest()`（review-material.mjs）原仅以 `Dirent.isDirectory()` 决定是否递归，目录符号链接/联接点是否被跟随取决于平台对重解析点的分类。本机 Node 24 实测联接点 `isDirectory()===false`（行为与 plan-contract「该模式的清单不遍历符号链接与联接点」口径一致），但 CI 下限 Node 20 未实机验证，且 walk 无环守卫（自指联接点在被报为目录的假设下会无限递归）。现加一行 `entry.isSymbolicLink()` 显式跳过（先于 `isDirectory()` 递归判断）：链接/junction 类条目一律不进清单，对其处置不再取决于 `isDirectory()` 对重解析点的分类结果；被报为既非链接亦非目录的条目维持原状（隐式排除、不记 limits）。环守卫维持不做。已知 Node 版本上结果不变，属防御性加固；若平台分类反转使链接被当普通目录递归，回归测试的 `tracked_files === 1` 断言会在 CI 大声失败；文档口径不变。
 - **回归测试**：新增 1 项「non-Git manifests never follow directory symlinks or junctions」——无 Git 目录下建指向仓库外目标的 junction（win32）/symlink（POSIX；无法创建时 t.skip，沿用输出守卫测试兜底惯例），断言 snapshot 与 collect 清单均不含链接后文件（files 键恰为仓库自有文件、`linked`/`linked/*` 缺席），并写入真实新文件证明常规检测未受损。Node 测试 122 → 123。
