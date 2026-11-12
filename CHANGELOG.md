@@ -3,6 +3,16 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.12 — 2026-11-13
+
+未发布（无 tag）。第六轮审查 P2 缺陷收口：1 个数据泄露向修复 + 回归测试。发布不等于已安装到宿主。
+
+- **P2-1：Git 模式指纹不再经链接读取仓库外字节**：`fingerprintFile` 原用 `fs.statSync` 跟随链接——未跟踪/脏条目若其路径的叶子是符号链接或中间组件是 Windows 联接点，工作区指纹会散列（进而在正文展开时展示）仓库外文件的内容。本机实测复现：快照后在仓库内建联接点，Git for Windows 将其当普通目录枚举，collect 列出联接点下的条目并完整展开正文（仓库外 token 出现在材料中，integrity 反而 complete）。修复分两层：`fingerprintFile` 改用 `fs.lstatSync`，链接自身返回 `{status:'link'}`；新增 `hasLinkAncestor`/`fingerprintPath`，Git 侧 5 个调用点（worktreeView、snapshot 的 untracked/dirty/rename-from、collect 的 evaluated 现值）先逐级 lstat 入口路径的中间组件，命中即以 `link` 状态记录。两种模式下工作区指纹一律不读取链接目标；`link` 记入 `integrity.limits`、状态转 `incomplete`，正文与摘要都不含目标字节。无 Git 清单路径不受影响（manifest 遍历已有显式守卫，叶子链接经 lstat 同样只记 link）。
+- **文档**：plan-contract「评审材料与基线」无 Git 口径句补两模式统一不读链接目标及逐级组件校验表述；`link` 加入限制枚举。
+- **回归测试**：新增 1 项「git-mode fingerprints never read content through a symlink or junction」——快照后建链接（win32 junction→仓库外目录、POSIX 文件符号链接；均无法创建时 t.skip），断言链接路径照常列入 untracked、以 `link` 进 limits、integrity 为 incomplete、材料正文不含仓库外 token。Node 测试 123 → 124。
+- **评估触发**：采集脚本防护修复与文档补录，不改变模型行为指引，按 eval README 豁免口径不触发 RED/GREEN（采样数 0）。
+- **验证**：`package_skill.py --check` PASS（12 文件、44 链接、2 个 .mjs、24 条契约锚点全命中、无 drift）；`node --test tools/test_plan.mjs` 124 项通过（0 skip，junction 用例在本机真实执行）；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；`git diff --check` 干净。
+
 ## 2.3.11 — 2026-11-12
 
 未发布（无 tag）。第六轮审查缺陷专项收口：1 个 P3 健壮性缺口修复 + 回归测试。发布不等于已安装到宿主。

@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.11**，未发布：第六轮审查缺陷收口——无 Git 清单重解析点显式守卫 + 回归测试）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.12**，未发布：第六轮审查 P2 收口——Git 模式指纹不再经符号链接/联接点读取仓库外字节）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)，发布于 2026-11-12（第六轮审查 P3 修复：无 Git 材料头部去 Git 概念）。上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）

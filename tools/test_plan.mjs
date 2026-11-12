@@ -553,6 +553,72 @@ test('non-Git manifests never follow directory symlinks or junctions', t => {
   }
 });
 
+test('git-mode fingerprints never read content through a symlink or junction', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const base = fs.mkdtempSync(path.join(workRoot(), 'gitlink-'));
+  const dir = path.join(base, 'repo');
+  const snap = path.join(base, 'snap.json');
+  const out = path.join(base, 'material.md');
+  const token = 'secret-outside-body';
+  fs.mkdirSync(dir, {recursive: true});
+  const git = (...args) => {
+    const r = spawnSync('git', args, {cwd: dir, encoding: 'utf8'});
+    assert.equal(r.status, 0, 'git ' + args.join(' ') + ': ' + r.stderr);
+    return r;
+  };
+  git('init', '-q');
+  git('config', 'user.email', 'eval@example.invalid');
+  git('config', 'user.name', 'eval');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'init');
+  // Snapshot first, link second: the linked path must land as an untracked new-in-task
+  // entry, exactly the case whose body used to be expanded straight from outside bytes.
+  const snapshot = runOk(['snapshot', '--repo', dir, '--out', snap]);
+  assert.equal(snapshot.mode, 'git');
+  const isWin = process.platform === 'win32';
+  const link = isWin ? path.join(dir, 'sneaky') : path.join(dir, 'sneaky.txt');
+  const expectedFile = isWin ? 'sneaky/secret.txt' : 'sneaky.txt';
+  let linked = false;
+  try {
+    if (isWin) {
+      const outsideDir = path.join(base, 'outside');
+      fs.mkdirSync(outsideDir);
+      fs.writeFileSync(path.join(outsideDir, 'secret.txt'), token + '\n');
+      fs.symlinkSync(outsideDir, link, 'junction');
+    } else {
+      fs.writeFileSync(path.join(base, 'outside-secret.txt'), token + '\n');
+      fs.symlinkSync(path.join(base, 'outside-secret.txt'), link);
+    }
+    linked = true;
+  } catch {
+    linked = false;
+  }
+  if (!linked) {
+    t.skip('link creation unavailable on this platform: git-mode link guard not exercised');
+    wipe(base);
+    return;
+  }
+  try {
+    const collected = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.ok(collected.untracked.includes(expectedFile),
+      'the linked path itself is still an untracked entry and must be listed');
+    const entry = collected.integrity.limits.find(x => x.file === expectedFile);
+    assert.ok(entry, 'the linked path must show as an integrity limit');
+    assert.equal(entry.kind, 'link');
+    assert.equal(collected.integrity.status, 'incomplete');
+    const body = fs.readFileSync(out, 'utf8');
+    assert.ok(!body.includes(token),
+      'material must never contain content read through a link or junction');
+  } finally {
+    try {
+      if (isWin) fs.rmdirSync(link);
+      else fs.unlinkSync(link);
+    } catch {}
+    wipe(base);
+  }
+});
+
 test('resolveReal expands Windows 8.3 short-name components', t => {
   if (process.platform !== 'win32') { t.skip('Windows-specific behaviour'); return; }
   const probe = 'C:\\PROGRA~1';

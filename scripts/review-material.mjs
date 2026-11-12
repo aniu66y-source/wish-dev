@@ -147,13 +147,37 @@ function samePath(left, right) {
   return normalizePath(left) === normalizePath(right);
 }
 
+// Git for Windows enumerates junctions as ordinary directories, so an entry path can
+// leave the repository through a link component before the leaf. lstat every ancestor
+// below the root before trusting a readable-looking leaf.
+function hasLinkAncestor(root, rel) {
+  let current = root;
+  for (const part of String(rel).split('/')) {
+    current = path.join(current, part);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function fingerprintPath(root, rel) {
+  if (hasLinkAncestor(root, rel)) return {status: 'link', sha256: null, size: null};
+  return fingerprintFile(path.join(root, rel));
+}
+
 function fingerprintFile(file) {
   let stat;
   try {
-    stat = fs.statSync(file);
+    // lstat, not stat: a symlink/junction is fingerprinted as itself. Reading the target
+    // could hash (and later display) content that lives outside the repository.
+    stat = fs.lstatSync(file);
   } catch (error) {
     return {status: error?.code === 'ENOENT' ? 'missing' : 'unreadable', sha256: null, size: null};
   }
+  if (stat.isSymbolicLink()) return {status: 'link', sha256: null, size: null};
   if (!stat.isFile()) return {status: 'unreadable', sha256: null, size: stat.size};
   try {
     const {sha256: digest, size} = hashFile(file);
@@ -217,10 +241,12 @@ function blobFingerprint(repo, sha) {
 // `complete` is false for binary, oversized, truncated and unreadable content, and the
 // caller records exactly one integrity entry for it.
 function worktreeView(repo, file) {
-  const fingerprint = fingerprintFile(path.join(repo, file));
+  const fingerprint = fingerprintPath(repo, file);
   if (fingerprint.status !== 'ok') {
-    return {kind: fingerprint.status === 'missing' ? 'missing' : 'unreadable', complete: false,
-      fingerprint, ref: file, text: null, bytes: fingerprint.size, truncated: false};
+    const kind = fingerprint.status === 'missing' ? 'missing'
+      : fingerprint.status === 'link' ? 'link' : 'unreadable';
+    return {kind, complete: false, fingerprint, ref: file, text: null,
+      bytes: fingerprint.size, truncated: false};
   }
   if (fingerprint.size > BLOB_LIMIT) {
     return {kind: 'toolarge', complete: false, fingerprint, ref: file, text: null,
@@ -483,13 +509,13 @@ function snapshot(repo, options) {
     const tree = base ? treeBlobs(root, base) : new Map();
     for (const entry of statusEntries(root)) {
       if (entry.x === '?') {
-        state.untracked[entry.file] = fingerprintFile(path.join(root, entry.file));
+        state.untracked[entry.file] = fingerprintPath(root, entry.file);
         continue;
       }
       state.dirty[entry.file] = {
         index: index.get(entry.file) ?? null,
         head: tree.get(entry.file) ?? (base ? resolveBlob(root, base, entry.file) : null),
-        worktree: fingerprintFile(path.join(root, entry.file)),
+        worktree: fingerprintPath(root, entry.file),
       };
       // A rename/copy reports only the new path. The old path is already absent from the
       // index and worktree at snapshot time, so without its own record collect would read the
@@ -498,7 +524,7 @@ function snapshot(repo, options) {
         state.dirty[entry.from] = {
           index: index.get(entry.from) ?? null,
           head: tree.get(entry.from) ?? (base ? resolveBlob(root, base, entry.from) : null),
-          worktree: fingerprintFile(path.join(root, entry.from)),
+          worktree: fingerprintPath(root, entry.from),
         };
       }
     }
@@ -1065,7 +1091,7 @@ function collect(repo, options) {
       const entry = statusByFile.get(file) ?? null;
       const baseline = baselineOf(file);
       const currentIndexSha = index.get(file) ?? null;
-      const currentWt = fingerprintFile(path.join(root, file));
+      const currentWt = fingerprintPath(root, file);
       const indexChanged = currentIndexSha !== (baseline.index ?? null);
       const worktreeChanged = !sameState(baseline.worktree ?? {status: 'missing', sha256: null, size: null}, currentWt);
       evaluated.set(file, {indexChanged, worktreeChanged});
