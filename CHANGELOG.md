@@ -3,6 +3,17 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.11 — 2026-11-12
+
+未发布（无 tag）。第六轮审查缺陷专项收口：1 个 P3 健壮性缺口修复 + 回归测试。发布不等于已安装到宿主。
+
+- **P3-1：无 Git 清单显式跳过重解析点（目录符号链接/Windows 联接点）**：`manifest()`（review-material.mjs）原仅以 `Dirent.isDirectory()` 决定是否递归，目录符号链接/联接点是否被跟随取决于平台对重解析点的分类。本机 Node 24 实测联接点 `isDirectory()===false`（行为与 plan-contract「该模式的清单不遍历符号链接与联接点」口径一致），但 CI 下限 Node 20 未实机验证，且 walk 无环守卫（自指联接点在被报为目录的假设下会无限递归）。现加一行 `entry.isSymbolicLink()` 显式跳过（先于 `isDirectory()` 递归判断）：链接/junction 类条目一律不进清单，对其处置不再取决于 `isDirectory()` 对重解析点的分类结果；被报为既非链接亦非目录的条目维持原状（隐式排除、不记 limits）。环守卫维持不做。已知 Node 版本上结果不变，属防御性加固；若平台分类反转使链接被当普通目录递归，回归测试的 `tracked_files === 1` 断言会在 CI 大声失败；文档口径不变。
+- **回归测试**：新增 1 项「non-Git manifests never follow directory symlinks or junctions」——无 Git 目录下建指向仓库外目标的 junction（win32）/symlink（POSIX；无法创建时 t.skip，沿用输出守卫测试兜底惯例），断言 snapshot 与 collect 清单均不含链接后文件（files 键恰为仓库自有文件、`linked`/`linked/*` 缺席），并写入真实新文件证明常规检测未受损。Node 测试 122 → 123。
+- **契约锚点补钉执行期静默契约（19 → 24）**：`CONTRACT_ANCHORS`（package_skill.py）此前未覆盖 2.3.9 恢复的执行期静默与上下文隔离规则——正是 2.3.2 精简时被静默删除的向量。新增 5 条：SKILL.md「上下文隔离」「执行期静默（P0）」、workflow.md「- 执行期静默：随块告知子智能体」「执行期间保持静默」、continuation.md「对账本身保持极简」（该文件首个锚点）。锚点缺失仅报 WEAK、不改退出码；按惯例锚点增删随版本条目记录。
+- **测试清理惯用法**：两处 finally 以 `fs.rmSync(link, {recursive: true})` 删链接/junction——Windows 上 recursive rm 会穿过联接点删除目标内容（现测试目标均在临时目录内故无害，属危险惯用法）。改为只删链接本身：win32 `rmdirSync`、POSIX `unlinkSync`。
+- **评估触发**：脚本防御性加固、锚点补充与测试惯用法收口，不改变模型行为指引，按 eval README 豁免口径不触发 RED/GREEN（采样数 0）。
+- **验证**：`package_skill.py --check` PASS（12 文件、44 链接、2 个 .mjs、24 条契约锚点全命中、无 drift）；`node --test tools/test_plan.mjs` 123 项通过（0 skip，链接回归用例真实执行且清理只删链接本身）；`python -B -m unittest discover -s tools -p "test_*.py"` 19 项通过；`git diff --check` 干净。
+
 ## 2.3.10 — 2026-11-12
 
 已正式发布：[v2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)。第六轮全面审查修复：1 个 P3 脚本显示缺陷 + 1 处 P3 报错措辞 + 2 处 P3 文档口径。发布不等于已安装到宿主。

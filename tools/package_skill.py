@@ -28,13 +28,16 @@ TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
 CONTRACT_ANCHORS = {
     "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"禁止调用\*\*任何团队",
                  r"^### 宿主每轮动作硬规则", r"^\*\*领导层执行白名单\*\*",
-                 r"每任务修复预算默认 3 次", r"^\*\*指令优先级\*\*"),
+                 r"每任务修复预算默认 3 次", r"^\*\*指令优先级\*\*",
+                 r"^\*\*上下文隔离\*\*", r"执行期静默（P0）"),
     "references/workflow.md": (r"^## 子智能体任务下发契约", r"^## 子智能体任务交付契约",
                                r"下发块用下方 12 项", r"运行模式：按宿主能力选择",
-                               r"review-material\.mjs"),
+                               r"review-material\.mjs", r"^- 执行期静默：随块告知子智能体",
+                               r"执行期间保持静默"),
     "references/plan-contract.md": (r"^## 账本落盘硬门禁", r"从文件开头 40 行内开始",
                                     r"起始行起的 15 行内（含起始行）齐备", r"context_id",
                                     r"^## 写入权限（三类）", r"^## 评审材料与基线"),
+    "references/continuation.md": (r"对账本身保持极简",),
 }
 
 

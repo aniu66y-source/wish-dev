@@ -401,6 +401,11 @@ function manifest(repo, {skipGit}) {
   const walk = directory => {
     for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
       if (skipGit && entry.name === '.git') continue;
+      // Symlinks (to files or directories) and Windows junctions are reparse points,
+      // not regular entries: the documented manifest must not follow them out of the repository
+      // (or into a cycle), so every reparse point is skipped regardless of how the
+      // platform classifies its target.
+      if (entry.isSymbolicLink()) continue;
       const full = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) files[toPosix(path.relative(repo, full))] = fingerprintFile(full);

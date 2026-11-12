@@ -503,6 +503,56 @@ test('non-Git collect keeps a bogus .git out of the manifest like snapshot does'
   } finally { wipe(dir, snap, out); }
 });
 
+test('non-Git manifests never follow directory symlinks or junctions', t => {
+  const base = fs.mkdtempSync(path.join(workRoot(), 'nogit-link-'));
+  const dir = path.join(base, 'repo');
+  const target = path.join(base, 'target');
+  const link = path.join(dir, 'linked');
+  const snap = path.join(base, 'snap.json');
+  const out = path.join(base, 'material.md');
+  fs.mkdirSync(dir, {recursive: true});
+  // A garbage gitfile forces non-Git mode. The target lives OUTSIDE the repo, so
+  // following the link would smuggle an external file into the repository manifest.
+  fs.writeFileSync(path.join(dir, '.git'), 'garbage\n');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  fs.mkdirSync(target, {recursive: true});
+  fs.writeFileSync(path.join(target, 'secret.txt'), 'secret\n');
+  let linked = false;
+  try {
+    if (process.platform === 'win32') fs.symlinkSync(target, link, 'junction');
+    else fs.symlinkSync(target, link);
+    linked = true;
+  } catch {
+    linked = false;
+  }
+  if (!linked) {
+    t.skip('symlink/junction creation unavailable on this platform: link guard not exercised');
+    wipe(base);
+    return;
+  }
+  try {
+    const data = runOk(['snapshot', '--repo', dir, '--out', snap]);
+    assert.equal(data.tracked_files, 1, 'only the repository-owned file may be tracked');
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(snap, 'utf8')).files), ['a.txt'],
+      'a file behind the link must not enter the snapshot manifest');
+    fs.writeFileSync(path.join(dir, 'b.txt'), 'b\n');
+    const collected = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    const listed = [...collected.untracked, ...collected.unstaged, ...collected.deleted,
+      ...collected.out_of_scope.map(entry => entry.file), ...collected.unscoped.map(entry => entry.file)];
+    assert.ok(listed.includes('b.txt'), 'a real addition must still be detected');
+    assert.ok(!listed.some(file => file === 'linked' || file.startsWith('linked/')),
+      'files reachable only through the link must stay out of the collect manifest');
+  } finally {
+    // Remove the link itself only: rmSync(recursive) walks through Windows junctions
+    // and would delete the target directory's contents.
+    try {
+      if (process.platform === 'win32') fs.rmdirSync(link);
+      else fs.unlinkSync(link);
+    } catch {}
+    wipe(base);
+  }
+});
+
 test('resolveReal expands Windows 8.3 short-name components', t => {
   if (process.platform !== 'win32') { t.skip('Windows-specific behaviour'); return; }
   const probe = 'C:\\PROGRA~1';
@@ -1237,7 +1287,14 @@ test('output guard refuses repository paths including a ..name directory', t => 
       assert.equal(result.status, 2, 'a link resolving back into the repository must be refused');
       assert.equal(fs.existsSync(path.join(dir, 'material.md')), false);
     }
-  } finally { wipe(dir, snap, outside); fs.rmSync(link, {recursive: true, force: true}); }
+  } finally {
+    wipe(dir, snap, outside);
+    // Remove the junction itself only; recursive rmSync follows it into the repository.
+    try {
+      if (process.platform === 'win32') fs.rmdirSync(link);
+      else fs.unlinkSync(link);
+    } catch {}
+  }
 });
 
 test('a rename from out of scope does not pull the excluded path into the diff', t => {
