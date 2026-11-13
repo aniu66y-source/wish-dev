@@ -334,6 +334,7 @@ function blobBody(repo, sha) {
 }
 
 function blobFingerprint(repo, sha) {
+  if (sha && typeof sha === 'object') return {...blobFingerprint(repo, sha.blob), mode: sha.mode};
   if (!sha) return {status: 'missing', sha256: null, size: null, blob: null};
   if (blobCache.has(sha)) return blobCache.get(sha);
   const sizeText = gitValue(repo, ['cat-file', '-s', sha]);
@@ -438,6 +439,10 @@ function worktreeView(repo, file) {
 }
 
 function blobView(repo, sha) {
+  if (sha && typeof sha === 'object') {
+    const view = blobView(repo, sha.blob);
+    return {...view, fingerprint: {...view.fingerprint, mode: sha.mode}};
+  }
   if (!sha) {
     return {kind: 'missing', complete: false, fingerprint: {status: 'missing', sha256: null, size: null, blob: null},
       ref: null, text: null, bytes: null, truncated: false};
@@ -468,6 +473,14 @@ function blobView(repo, sha) {
   }
   return {kind: 'text', complete: !truncated, fingerprint, ref: 'blob:' + sha,
     text: slice.toString('utf8'), bytes: buffer.length, truncated};
+}
+
+// Git identity includes metadata: equal bytes alone do not explain a mode-only change.
+// A legacy SHA string lacks mode evidence and must never prove unchanged.
+function sameGitEntry(left, right) {
+  if (!left || !right) return left === right;
+  return Boolean(left.blob && right.blob && left.mode && right.mode
+    && left.blob === right.blob && left.mode === right.mode);
 }
 
 function sameFingerprint(left, right) {
@@ -568,8 +581,8 @@ function indexBlobs(repo) {
     if (!record) continue;
     const tab = record.indexOf('\t');
     if (tab < 0) continue;
-    const [, sha] = record.slice(0, tab).split(' ');
-    blobs.set(record.slice(tab + 1), sha);
+    const [mode, sha] = record.slice(0, tab).split(' ');
+    blobs.set(record.slice(tab + 1), {blob: sha, mode});
   }
   return blobs;
 }
@@ -586,8 +599,8 @@ function treeBlobs(repo, revision) {
     if (!record) continue;
     const tab = record.indexOf('\t');
     if (tab < 0) continue;
-    const [, type, sha] = record.slice(0, tab).split(' ');
-    if (type === 'blob') blobs.set(record.slice(tab + 1), sha);
+    const [mode, type, sha] = record.slice(0, tab).split(' ');
+    if (type === 'blob') blobs.set(record.slice(tab + 1), {blob: sha, mode});
   }
   return blobs;
 }
@@ -674,9 +687,10 @@ function assertSafeOutput(out, repo, snapshotPath) {
 
 function fingerprintSummary(fingerprint) {
   if (!fingerprint) return '（无）';
-  if (fingerprint.status === 'ok') return fingerprint.sha256.slice(0, 12) + '…（' + fingerprint.size + ' 字节）';
+  const mode = fingerprint.mode ? '，Git mode ' + fingerprint.mode : '';
+  if (fingerprint.status === 'ok') return fingerprint.sha256.slice(0, 12) + '…（' + fingerprint.size + ' 字节' + mode + '）';
   const detail = fingerprint.size === null ? '' : '，' + fingerprint.size + ' 字节';
-  return '（' + fingerprint.status + detail + '）';
+  return '（' + fingerprint.status + detail + mode + '）';
 }
 
 function fenced(content, info = '') {
@@ -944,7 +958,9 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
     // Attribution always compares content against the user's task-start content, so the
     // displayed baseline digest must be the same value (falling back to the layer blob
     // only when no worktree digest exists, e.g. a file that was absent).
-    if (baseline.worktree && baseline.worktree.status === 'ok') return baseline.worktree;
+    if (baseline.worktree && baseline.worktree.status === 'ok') {
+      return {...baseline.worktree, mode: baseline.index?.mode};
+    }
     // A clean tracked file's task-start content is the HEAD blob (Git content id, not raw
     // bytes), so that blob is the baseline digest to display.
     if (baseline.worktree && baseline.worktree.status === 'clean' && baseline.head) {
@@ -1288,6 +1304,11 @@ function collect(repo, options) {
       value = {kind: 'untracked', head: null, index: null, worktree: state.untracked[file]};
     } else if (Object.hasOwn(state.dirty ?? {}, file)) {
       const entry = state.dirty[file];
+      if ([entry.index, entry.head].some(value => value && !value.mode)) {
+        limits.push({file, layer: 'baseline', kind: 'metadata',
+          reason: 'snapshot lacks Git mode metadata; legacy blob-only baseline cannot prove mode attribution or unchanged state',
+          bytes: null, ref: null, digest: null});
+      }
       value = {kind: 'dirty', head: entry.head, index: entry.index, worktree: entry.worktree};
     } else {
       const headBlob = state.base ? baseTree.get(file) ?? null : null;
@@ -1295,7 +1316,7 @@ function collect(repo, options) {
       // Git's own normalization; recording that as a 'clean' baseline keeps raw worktree
       // bytes (CRLF, filters) out of the comparison.
       value = headBlob
-        ? {kind: 'tracked', head: headBlob, index: headBlob, worktree: {status: 'clean', sha256: headBlob, size: null}}
+        ? {kind: 'tracked', head: headBlob, index: headBlob, worktree: {status: 'clean', sha256: headBlob.blob, size: null}}
         : {kind: 'absent'};
     }
     baselineCache.set(file, value);
@@ -1310,6 +1331,12 @@ function collect(repo, options) {
       return {attribution: 'task', note: null};
     }
     const before = baseline.worktree;
+    if (baseline.kind === 'dirty' && ['index', 'committed'].includes(change.layer) && change.kind !== 'deleted') {
+      if (baseline.index && !baseline.index.mode) return {attribution: 'unknown', note: '旧快照缺少 Git mode，无法证实元数据归属'};
+      if (baseline.index && change.view.fingerprint.mode !== baseline.index.mode) {
+        return {attribution: 'mixed', note: '任务开始时已有改动，Git mode 与任务开始时不同'};
+      }
+    }
     if (change.kind === 'deleted') {
       if (!before || before.status === 'missing') return {attribution: 'pre-existing', note: '任务开始前已不存在'};
       // A clean tracked baseline holds the user's pre-existing committed content, so deleting
@@ -1383,9 +1410,12 @@ function collect(repo, options) {
     for (const file of [...candidates].sort()) {
       const entry = statusByFile.get(file) ?? null;
       const baseline = baselineOf(file);
-      const currentIndexSha = index.get(file) ?? null;
+      const currentIndex = index.get(file) ?? null;
       const currentWt = fingerprintPath(root, file);
-      const indexChanged = currentIndexSha !== (baseline.index ?? null);
+      // A task commit is another observed state: restoring the index to its task-start
+      // entry still differs from that commit and must remain a separate review layer.
+      const indexChanged = !sameGitEntry(currentIndex, baseline.index ?? null)
+        || (committedFingerprints.has(file) && !sameGitEntry(currentIndex, treeNow.get(file) ?? null));
       // A clean tracked baseline is compared by Git content id; anything else (dirty or
       // untracked baselines) stored raw worktree bytes and is compared byte for byte.
       const cleanBaseline = baseline.worktree?.status === 'clean';
@@ -1422,20 +1452,20 @@ function collect(repo, options) {
       const committedFingerprint = committedFingerprints.get(file) ?? null;
       let indexFingerprint = null;
       if (indexChanged) {
-        const view = blobView(root, currentIndexSha);
+        const view = blobView(root, currentIndex);
         indexFingerprint = view.fingerprint;
-        if (!sameFingerprint(indexFingerprint, committedFingerprint)) {
-          addChange({file, layer: 'index', kind: currentIndexSha ? 'modified' : 'deleted', oldPath: entry?.from ?? null}, view);
+        if (!sameGitEntry(indexFingerprint, committedFingerprint)) {
+          addChange({file, layer: 'index', kind: currentIndex ? 'modified' : 'deleted', oldPath: entry?.from ?? null}, view);
         }
       }
       if (worktreeChanged) {
         // A worktree that only matches the recorded index or commit is already covered by
         // that layer; a worktree restored to a *pre-task* value is still a task change.
         const explainedByIndex = cleanBaseline
-          ? Boolean(contentId && currentIndexSha && contentId === currentIndexSha)
+          ? Boolean(contentId && currentIndex && contentId === currentIndex.blob)
           : sameFingerprint(currentWt, indexFingerprint);
         const explainedByCommit = cleanBaseline
-          ? Boolean(contentId && committedFingerprint?.sha256 && contentId === committedFingerprint.sha256)
+          ? Boolean(contentId && committedFingerprint?.blob && contentId === committedFingerprint.blob)
           : sameFingerprint(currentWt, committedFingerprint);
         if (!explainedByIndex && !explainedByCommit) {
           addChange({file, layer: 'worktree', kind: currentWt.status === 'missing' ? 'deleted' : 'modified', oldPath: entry?.from ?? null},

@@ -17,11 +17,11 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.16**，已发布：第七轮全量审查的门禁覆盖、材料忠实性与文档口径修复）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.18**，已发布：Windows 范围的账本隐藏区域、链接解析、Git 权限元数据与版本读取修复，以及文档瘦身；含未单独发布的 2.3.17 改动）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 最新正式版：[2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)，发布于 2026-11-13。上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
-- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），2.3.15 另有 SC-02 变体 C/D 的 RED/GREEN 各 5 次采样（RED C 2/5、RED D 4/5，GREEN 各 5/5），见 [行为评估](tools/eval/README.md)；2.3.16 只改门禁、材料忠实性与文档，未新增行为采样，不能据此宣称跨宿主或全部行为验收通过
+- 最新正式版：[2.3.18](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.18)，发布于 2026-11-14（Windows-only：账本隐藏区域与链接解析、Git 权限元数据、版本读取修复，以及文档瘦身）。上一版 [2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)（2026-11-13，门禁覆盖、材料忠实性与文档口径）；再上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
+- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），2.3.15 另有 SC-02 变体 C/D 的 RED/GREEN 各 5 次采样（RED C 2/5、RED D 4/5，GREEN 各 5/5），见 [行为评估](tools/eval/README.md)；2.3.16 只改门禁、材料忠实性与文档；2.3.17 只改脚本与文档（未改 P0 硬规则与模型行为指引），两者均未新增行为采样（采样数 0）；2.3.18 修复脚本、更正平台/链接说明并做文档瘦身（未改 P0 硬规则与计划格式），亦未新增行为采样。不能据此宣称全部宿主或全部行为验收通过
 
 ---
 
@@ -38,6 +38,8 @@
 ```
 
 **宿主要求**：能读文件、执行命令、访问授权项目、跟踪长任务。
+**平台范围**：仅 Windows，不承诺 Linux/macOS 运行或验收。
+
 **平台前提**：能派生独立执行体（子智能体，或满足「执行工具 / 上下文隔离 / 任务可追踪 / 可独立评审」四项的隔离子任务）+ 模型支持工具调用（Windows 下的仓库工具已做本地验证；具体宿主执行能力仍须实检，不满足则降级为整理需求/计划，不声称完整开发）。
 **运行依赖**：技能脚本需要 Node.js 18+；维护仓库、运行 Python 测试或打包另需 Python 3.10+，普通 ZIP 安装不需要 Python。
 **临时文件落点**：运行缓存、工作副本放 `WISH_DEV_RUNTIME_ROOT` 或你指定的目录，不写进项目或全局缓存。
@@ -46,7 +48,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（最新发布版本为 2.3.16），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（最新发布版本为 2.3.18，含未单独发布的 2.3.17 改动），按宿主规则导入 |
 | 目录复制 | 解压 Release ZIP，将其中完整 `wish-dev/` 目录复制到宿主 skills 目录；不要只拷 SKILL.md，也不要把整个源码仓库当安装包 |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
@@ -144,18 +146,12 @@ $env:WISH_DEV_RUNTIME_ROOT = "D:/codex/wish-dev-doc-check"
 New-Item -ItemType Directory -Force -Path $env:WISH_DEV_RUNTIME_ROOT | Out-Null
 ```
 
-```bash
-# POSIX shell；使用已约定的仓库外绝对路径
-export WISH_DEV_RUNTIME_ROOT="/absolute/runtime/wish-dev-doc-check"
-mkdir -p "$WISH_DEV_RUNTIME_ROOT"
-```
-
 本地提交前**始终**运行下面三条（AGENTS.md 指定的同一组；文档改动也要跑，脚本行为改动再加受影响验证）：
 
 ```bash
 # 1. 结构校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 输出含 skill_quality（7 维质量报告：contracts 校验 4 个文件的 24 条契约锚点，含 P0 保护规则，缺锚点即 exit 1；versions 校验 SKILL/CHANGELOG 与 README 中「当前…」「最新…」行声明的版本一致，同一行只取首个版本号）、internal_links 命中数，
+# 输出含 skill_quality（7 维质量报告：contracts 校验 4 个文件的 24 条契约锚点，含 P0 保护规则，缺锚点即 exit 1；versions 校验 SKILL/CHANGELOG 与 README 中「当前…」「最新…」行声明的版本一致，同一行只取首个版本号）、internal_links 命中数（行内链接/图片支持完整 `<path>` 目标（可含空格）、裸目标的平衡括号与标点转义，以及目标外以空白分隔的双引号/单引号/括号标题；`<path "title">` 整体是路径而非内嵌标题。本地目标去原始片段后按 UTF-8 解码一次并检查仓库边界与打包清单；正文引用式定义及 full/collapsed 引用明确拒绝，孤立 `[文本]` 保留。HTML 注释、顶层 0–3 空格围栏、按块上下文识别的缩进代码及同段行内代码中的样例仅在解析成功且命中打包文件时计数；外部与锚点链接不校验、不计数；这是有限语法扫描而非完整 CommonMark 渲染，未支持的引用容器围栏等结构不按示例放宽，无法解析或缺失引用会明确拒绝），
 # 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）。
 # frontmatter 按仓库支持的简化 YAML 子集真解析：未闭合语法、流式集合、块标量、重复键、version 层级错误、
 # 未加引号的 version、非法转义、会歧义成布尔/null/数字的裸值一律 exit 1（能力范围见下方说明）。

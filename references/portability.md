@@ -1,5 +1,7 @@
 # 安装、移植与能力边界
 
+**平台范围：仅 Windows。** 本文的移植指 Windows 上不同 agent 宿主之间的安装与能力映射，不承诺 Linux/macOS 运行或验收。已有 CI 的其他系统检查仅为辅助回归，不能据此扩大支持范围。
+
 ## 安装
 
 本包采用 [Agent Skills 规范](https://agentskills.io/specification)：wish-dev/ 根目录下有 SKILL.md，资源以相对路径引用。

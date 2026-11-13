@@ -2,6 +2,53 @@
 
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
+并非每个版本条目都有独立「验证」行——2.3.14 记于「已知风险/行为评估未完成」、2.3.15 记于内联采样段落、2.3.16 记于「已知残留」；门禁与采样事实以各条目原文与 git 历史为准。
+
+## 2.3.18 — 2026-11-13
+
+已正式发布：[v2.3.18](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.18)。按用户确认的 Windows-only 范围修复本轮审查问题；包含未单独发布的 2.3.17 改动与本轮文档瘦身。不改 P0 模型行为规则，不增加 Linux 支持或跨平台验收承诺。
+
+- **P1 账本门禁**：修复同行多段 HTML 注释、引用/列表容器中的围栏与伪闭围栏误放行；围栏闭合不能沿用字段的宽松前缀归一化，列表/标题文本或额外缩进不作为顶层闭符，嵌套容器按上下文处理；围栏信息中的注释标记不污染正文状态。隐藏模板不能代替可见账本。
+- **P2 链接解析与勘误**：2.3.17 将 `<path "title">` 认作内嵌标题并按空白截断的结论不正确；尖括号内整体是目标，合法标题应写在 `>` 外。本轮改为集中解析完整目标、转义/括号、URL 编码与引用式链接；缺失或越界引用不得静默通过。旧条目保留为阶段记录，以本条勘误为准。代码样例遮罩限定为顶层 0–3 空格围栏、按块上下文识别的缩进代码、同段行内代码及 HTML 注释；引用容器围栏不受此宽免，按正文严格检查，可能由此前偶然遮罩的接受变为明确拒绝。这是本轮可观察边界变化，不宣称完整 CommonMark 容器支持。
+- **P3 Git mode**：Windows Git 仍保存可执行位元数据；本轮修复索引纯 mode 变化与恢复被误报“本次未变化”的问题，不引入 Unix 权限模拟。新快照保留 `(blob, mode)`；旧快照的干净跟踪项从 BASE 树恢复 mode，旧脏条目缺 mode 时保留变化并显式 `incomplete`，不能确认的元数据归属标 `unknown`，不猜测完整。
+- **P3 版本真源**：版本漂移报告复用已解析的 `metadata.version`，不再误取其他映射中同缩进的 `version`。
+- **文档与平台**：SKILL/README/兼容说明明确 Windows-only；保留最新正式版 2.3.16，开发版本同步 2.3.18。更正 README 链接语法说明，移除 POSIX 环境示例。
+- **行为评估**：修复脚本并更正已实现规则的文档说明，不改变 P0 模型行为规则，未新增 RED/GREEN 行为采样（采样数 0）；代码回归的 RED/GREEN 不等同于行为评估。
+- **文档瘦身**：`SKILL.md` 14.9 KiB → 12.2 KiB（-17.9%），把下一动作表、修复预算状态机、代码质量清单改为指向权威文件的指针；`references/workflow.md` -7.7%。`references/plan-contract.md` 仅 -0.6%：该篇几乎全是单次出现的机器契约（评审材料、快照身份、输出边界、发布方式），本轮只去掉少量跨节复述。未新增文件、未改脚本行为与计划格式，24 条契约锚点全部保留；两篇引用受「单次出现规则不得删除」约束，不再向 15%~25% 硬压，剩余跨文件重复（lifecycle/portability/continuation/setup-bootstrap/release-handover）待确认后处理。
+- **验证**：Windows 本地三门禁已实跑通过：`--check` 为 12 个文件、47 个内部链接、2 个 .mjs、24/24 契约锚点；Node 193/193；Python 57/57。版本漂移 1 条预期 WEAK（正式版 2.3.16 与未发布开发版 2.3.18），exit 0。独立复审发现的容器伪闭合、代码跨度与段落边界误判均补真实 RED/GREEN；28 个跟踪文件实测 LF，`git diff --check` 通过。仅代表当前 Windows 本地代码/文档回归，不代表 CI 8 组合、真实跨宿主验收或自动交付证明通过。
+
+## 2.3.17 — 2026-11-13
+
+未单独发布；本阶段改动继续并入 2.3.18，链接解析结论见 2.3.18 勘误。第八轮全量审查（28 个跟踪文件、三条门禁全绿基线）后的 P1/P2/P3 修复；未改 P0 硬规则与模型行为指引。
+
+**P1：clean 基线的 explainedByCommit 比较空间修正**
+
+- 2.3.13 起 clean 跟踪基线按内容 id（Git 对象 id）比较，但 explainedByCommit 仍拿内容 id 与 HEAD blob 的字节摘要（`sha256` 字段）比较：两个命名空间恒不等，clean 基线上该判定永远为 false，工作区内容与提交一致、仅暂存区分叉时多记一条冗余 worktree 层。现与 `blob`（HEAD blob 的 Git 对象 id）比较，与 explainedByIndex 对齐。新增回归：提交内容回写工作区 + 暂存区分叉，断言仅 committed/index 两层；恢复基线内容后 worktree 层消失。
+- 勘误：2.3.13 条目 P1-1 原文「变化判定、explainedByIndex/explainedByCommit、attribute() 三处统一按内容 id 比较」系过度表述——explainedByCommit 的比较对象实为字节摘要（即本条修复的缺陷）。2.3.13 条目保留原文，勘误记于此。
+
+**P1：内部链接解析不再误拒合法混合格式**
+
+- 尖括号分支取内文后未剥离尾随 title、非尖括号分支只按单个空格切分：`<path "title">` 与 tab 分隔的 title 均被误判为缺失打包引用（exit 1），与 2.3.16 声明的「两种合法 Markdown 写法」不符。现两分支统一取首个空白分隔段为路径（打包文件名不含空白与 title）；新增 2 个链接边界回归方法（3 个场景：尖括号内 title、tab 分隔 title、缺失引用仍拒绝）。
+
+**P2：资源清单与打包脚本**
+
+- `resources()` 的 BLOCKED_DIRS 目录检查作用于全部 part（含文件名）：与禁用目录同名的文件（如 `references/dist`）被静默丢弃，与「隐藏文件拒绝而非丢弃」的 2.3.16 原则矛盾。现只对目录段（`parts[:-1]`）做目录检查，撞名文件落入后缀规则显式拒绝；新增回归。
+- `nextActions` 对 stories 为 null/缺失的计划直接取 `plan.stories`（TypeError），与同函数 `plan?.budget` 的防御风格不一致。现 `plan?.stories ?? []`，空计划走既有 final_acceptance 路径；新增用例。
+- `version_drift()` 的 frontmatter version 正则只匹配双引号，单引号 `version: 'x.y.z'`（合法 YAML）误报「SKILL.md version missing」。现两种引号均可（drift 仍只报 WEAK、不改退出码）；新增回归。
+- `contract_gaps()` docstring 仍写「只报 WEAK、不改退出码」，与 2.3.16 P2-02 起的阻断语义脱节，同步为：任一缺口（缺锚点/缺文件/锚点正则无效）main() exit 1。
+- 链接引用报错（Missing packaged reference / Reference leaves skill）在尖括号或尾随 title 隐藏路径时附原始链接目标（如 "Missing packaged reference: a (original link target: a b.md ...)"），避免按首段路径排障误导；新增回归。
+
+**文档**
+
+- eval README「已发布版本的评估状态」此前止于 2.3.15，补 2.3.16 一行（未触发评估：第七轮 P2/P3 修复，采样数 0）并记 2.3.17。
+- README「校验与打包」内部链接输出说明补支持写法：`<path>`、`path "title"`、`<path "title">` 与 tab 分隔 title，均取首个空白分隔段为路径。
+- CHANGELOG 头部补「验证口径惯例」说明（2.3.14/15/16 无独立验证行）；tools/eval/README.md「v2.3.0..HEAD」措辞更正为「v2.3.0 至当时 HEAD 的文档 diff」。
+
+**版本与验证**
+
+- SKILL.md metadata.version 2.3.16 → 2.3.17；README「当前版本」同步 2.3.17（未发布），「最新正式版」与「最新发布版本」保持 2.3.16（2.3.17 尚未发布）。
+- 行为评估：本版全部为脚本与文档修复，未改 P0 硬规则与模型行为指引，不触发 RED/GREEN（采样数 0）。
+- 三条门禁（文档改动亦跑）：node --test 170/170 通过、unittest 38/38 通过；--check 契约锚点 24/24 无缺口、internal_links 44、js_syntax_checked 2、version_drift 1 条 WEAK（README L23「最新正式版」与 L49「最新发布版本」均指向已发布的 2.3.16，同一消息去重后计 1 条；2.3.17 尚未发布，exit 0）。工作区变更文件 LF 实测。完整验证结果见运行记录。
 
 ## 2.3.16 — 2026-11-13
 

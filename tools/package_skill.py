@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_DIRS = ("references", "scripts", "assets")
@@ -61,7 +62,9 @@ def resources():
             parts = path.relative_to(ROOT).parts
             # Directory names compare case-insensitively: the same tree arrives from hosts
             # whose filesystem (or the maintainer's hands) spells NODE_MODULES differently.
-            if any(part.lower() in BLOCKED_DIRS for part in parts):
+            # The filename itself is never a blocked directory: a file named like one
+            # (references/dist) falls to the suffix rule below and is refused, not dropped.
+            if any(part.lower() in BLOCKED_DIRS for part in parts[:-1]):
                 continue
             # Hidden resource files are refused instead of dropped: a silently skipped
             # file is a file the package does not contain and nobody notices.
@@ -84,7 +87,8 @@ def contract_gaps():
     """Anchors (multiline regex, heading-anchored where it matters) gone from source.
 
     Substring presence was too weak: moving a rule elsewhere kept the gate green.
-    A regex miss still only reports WEAK and never changes the exit code."""
+    Any gap (missing anchor, missing file, or an invalid anchor regex) now blocks the
+    gate: main() exits 1, so a silently dropped hard rule cannot leave the check green."""
     gaps = []
     for name, anchors in CONTRACT_ANCHORS.items():
         path = ROOT / name
@@ -107,10 +111,15 @@ def version_drift():
     the mismatch, and a missing changelog line should not break local checks."""
     issues = []
     manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-    match = re.search(r'^  version:\s*"(\d+\.\d+\.\d+)"\s*$', manifest, re.M)
-    if not match:
+    front = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", manifest, re.S)
+    try:
+        data = parse_frontmatter(front[1]) if front else {}
+    except ValueError as error:
+        return ["SKILL.md frontmatter invalid: " + str(error)]
+    metadata = data.get("metadata")
+    version = metadata.get("version") if isinstance(metadata, dict) else None
+    if not isinstance(version, str):
         return ["SKILL.md version missing"]
-    version = match[1]
     changelog = ROOT / "CHANGELOG.md"
     if changelog.is_file():
         heading = re.search(r"^## (\d+\.\d+\.\d+)", changelog.read_text(encoding="utf-8"), re.M)
@@ -352,7 +361,7 @@ def parse_frontmatter(body):
 
 
 def masked_markdown(source):
-    """Blank out HTML comments and fenced code blocks before collecting links.
+    """Blank comments, fenced/indented blocks and inline code before checking links.
 
     Examples inside a fence and references inside an invisible comment are not links the
     package must contain; requiring them made a documented sample fail the gate."""
@@ -360,18 +369,187 @@ def masked_markdown(source):
         return re.sub(r"[^\n]", " ", match.group(0))
     source = re.sub(r"<!--[\s\S]*?-->", blank, source)
     lines = source.split("\n")
-    fence = None
+    fence, paragraph, indented = None, False, False
     for index, line in enumerate(lines):
-        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
-        if fence is None:
-            if marker:
-                fence = marker.group(1)
-                lines[index] = " " * len(line)
-        else:
-            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence is not None:
+            # A closer has only whitespace after a same-character, long-enough run.
+            if (marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence)
+                    and not marker[2].strip(" \t")):
                 fence = None
             lines[index] = " " * len(line)
-    return "\n".join(lines)
+            paragraph = False
+        elif not line.strip():
+            paragraph = False
+        elif len(line.expandtabs(4)) - len(line.expandtabs(4).lstrip(" ")) >= 4 and (
+                indented or not paragraph):
+            # Indented code cannot interrupt a paragraph, unlike fenced code.
+            lines[index] = " " * len(line)
+            indented = True
+        elif marker and (marker[1][0] != "`" or "`" not in marker[2]):
+            fence = marker[1]
+            lines[index] = " " * len(line)
+            paragraph, indented = False, False
+        else:
+            paragraph, indented = True, False
+    source = "\n".join(lines)
+    # Exact-length backtick runs delimit inline code; escaped openers stay prose.
+    index = 0
+    while index < len(source):
+        escaped = _markdown_escape(source, index)
+        if escaped:
+            _, index = escaped
+            continue
+        if source[index] == "`":
+            run = re.match(r"`+", source[index:])[0]
+            # Inline spans cannot cross blank lines or a new Markdown block.
+            rest = source[index + len(run):]
+            boundary = re.search(
+                r"\n[ \t]*\n|\n(?= {0,3}(?:#{1,6}(?:[ \t]|$)|>|[-+*][ \t]|1[.)][ \t]"
+                r"|[-=]+[ \t]*(?:\n|$)|(?:-[ \t]*){3,}(?:\n|$)"
+                r"|(?:\*[ \t]*){3,}(?:\n|$)|(?:_[ \t]*){3,}(?:\n|$)))",
+                rest)
+            if boundary:
+                rest = rest[:boundary.start()]
+            end = re.search(r"(?<!`)" + run + r"(?!`)", rest)
+            if end:
+                stop = index + len(run) + end.end()
+                source = (source[:index] + re.sub(r"[^\n]", " ", source[index:stop])
+                          + source[stop:])
+                index = stop
+                continue
+            index += len(run)
+            continue
+        index += 1
+    return source
+
+
+MARKDOWN_PUNCTUATION = r"!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"
+
+
+def _markdown_escape(source, index):
+    """Return an escaped ASCII punctuation character and the next offset, if any."""
+    if (source[index] == "\\" and index + 1 < len(source)
+            and source[index + 1] in MARKDOWN_PUNCTUATION):
+        return source[index + 1], index + 2
+    return None
+
+
+def _link_space(source, index):
+    start = index
+    while index < len(source) and source[index] in " \t\n":
+        index += 1
+    if source[start:index].count("\n") > 1:
+        raise ValueError("blank lines in link targets are unsupported")
+    return index
+
+
+def _link_destination(source, index):
+    """Scan an angle destination whole, or a bare destination with balanced parens."""
+    angle = index < len(source) and source[index] == "<"
+    if angle:
+        index += 1
+    out, depth = [], 0
+    while index < len(source):
+        escaped = _markdown_escape(source, index)
+        if escaped:
+            char, index = escaped
+            out.append(char)
+            continue
+        char = source[index]
+        if angle:
+            if char == ">":
+                return "".join(out), index + 1
+            if char in "<\n\r":
+                raise ValueError("unclosed or nested angle destination")
+        else:
+            if char in " \t\n" or (char == ")" and depth == 0):
+                break
+            if ord(char) < 32 or ord(char) == 127:
+                raise ValueError("control character in link destination")
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+        out.append(char)
+        index += 1
+    if angle or depth:
+        raise ValueError("unclosed angle destination or unbalanced parentheses")
+    return "".join(out), index
+
+
+def _inline_link(source, opening):
+    """Parse destination plus an optional OUTSIDE title, returning the closing offset."""
+    index = _link_space(source, opening + 1)
+    target, index = _link_destination(source, index)
+    destination_end = index
+    index = _link_space(source, index)
+    if index < len(source) and source[index] != ")":
+        if index == destination_end or source[index] not in "\"'(":
+            raise ValueError("expected whitespace-separated quoted or parenthesized title")
+        opener = source[index]
+        closer = ")" if opener == "(" else opener
+        index += 1
+        while index < len(source):
+            escaped = _markdown_escape(source, index)
+            if escaped:
+                _, index = escaped
+                continue
+            if source[index] == closer:
+                break
+            if opener == "(" and source[index] == "(":
+                raise ValueError("unescaped parenthesis in link title")
+            if source[index] == "\n":
+                # A title may wrap, but never cross a blank line.
+                index = _link_space(source, index)
+                continue
+            index += 1
+        else:
+            raise ValueError("unclosed link title")
+        index = _link_space(source, index + 1)
+    if index >= len(source) or source[index] != ")":
+        raise ValueError("unclosed inline link")
+    return target, source[opening + 1:index].strip(), index + 1
+
+
+def markdown_links(source):
+    """Yield (destination, original target, example) for inline links/images.
+
+    This is a deliberately small scanner, not a full Markdown renderer. Reference
+    definitions and explicit full/collapsed uses are refused in prose; a standalone
+    [label] without a definition remains ordinary text. Code/comments retain the
+    historical count-only-if-packaged policy. Escaped openers are not links.
+    """
+    masked = masked_markdown(source)
+    stack, index = [], 0
+    while index < len(source):
+        escaped = _markdown_escape(source, index)
+        if escaped:
+            _, index = escaped
+            continue
+        char = source[index]
+        if char == "[":
+            stack.append(index)
+        elif char == "]" and stack:
+            start = stack.pop()
+            example = masked[start] == " "
+            nxt = source[index + 1:index + 2]
+            line_start = source.rfind("\n", 0, start) + 1
+            definition = nxt == ":" and re.fullmatch(r" {0,3}", source[line_start:start])
+            if nxt == "[" or definition:
+                if not example:
+                    raise ValueError("Unsupported reference-style link; use an inline destination")
+            elif nxt == "(":
+                try:
+                    target, raw, end = _inline_link(source, index + 1)
+                except ValueError as error:
+                    if not example:
+                        raise ValueError("Malformed Markdown link: " + str(error)) from error
+                else:
+                    yield target, raw, example
+                    index = end
+                    continue
+        index += 1
 
 
 def validate(files):
@@ -425,33 +603,30 @@ def validate(files):
                 # Comments and fenced blocks may hold examples with deliberately broken
                 # links: there a reference is counted when it resolves to a packaged file
                 # and never reported missing. Prose links are checked strictly.
-                masked = masked_markdown(source)
-                for match in re.finditer(r"\]\(([^)]+)\)", source):
-                    target = match.group(1).strip()
-                    # A destination may be angle-bracketed and may carry a trailing title;
-                    # neither belongs to the path that the archive actually contains.
-                    if target.startswith("<"):
-                        end = target.find(">")
-                        target = (target[1:end] if end != -1 else target[1:]).strip()
-                    elif " " in target:
-                        target = target.split(" ", 1)[0]
-                    # Any URI scheme (https, mailto, ...) and pure fragments are not
-                    # packaged files; only relative paths are checked.
+                for target, raw_target, example in markdown_links(source):
+                    # Classify URI syntax before decoding. An encoded # belongs to the
+                    # filename; an encoded scheme must never bypass local containment.
                     if target.startswith("#") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
                         continue
                     target = target.split("#", 1)[0]
                     if not target:
                         continue
-                    example = masked[match.start()] == " "
-                    resolved = (path.parent / target).resolve()
+                    try:
+                        target = unquote(target, encoding="utf-8", errors="strict")
+                        resolved = (path.parent / target).resolve()
+                    except (ValueError, OSError) as error:
+                        if example:
+                            continue
+                        raise ValueError("Invalid link destination: " + raw_target) from error
+                    detail = "{} (original link target: {})".format(target, raw_target)
                     if not resolved.is_relative_to(ROOT.resolve()):
                         if example:
                             continue
-                        raise ValueError("Reference leaves skill: " + target)
+                        raise ValueError("Reference leaves skill: " + detail)
                     if resolved not in packaged:
                         if example:
                             continue
-                        raise ValueError("Missing packaged reference: " + target)
+                        raise ValueError("Missing packaged reference: " + detail)
                     link_count += 1
     return {"name": str(name), "version": str(version),
             "file_count": len(files), "internal_links_checked": link_count,

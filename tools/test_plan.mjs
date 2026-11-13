@@ -63,6 +63,10 @@ test('attempts above the limit stay rejected in every state',()=>{
     assert.ok(validatePlan(p).some(e=>e.includes('exceeds retry budget')),status);
   }
 });
+test('nextActions on a story-less plan is a safe no-op, not a crash',()=>{
+  assert.deepEqual(nextActions(null),[{action:'final_acceptance'}]);
+  assert.deepEqual(nextActions({}),[{action:'final_acceptance'}]);
+});
 test('a running final fix does not hide an independent ready line',()=>{
   const p=fixture();
   p.stories[0].status='running';p.stories[0].attempts=3;
@@ -189,6 +193,22 @@ const ledgers={
   scattered:()=>['# progress','- wish-id: W-01','杂项说明：随便写','备注：进度还行','- acceptance: AC-01 保存后刷新可读取','- current-package: T-1-01','其他：略','- next-action: 派发 T-1-01','- blocker: 无'].join('\n')+'\n',
   commented:()=>['# progress','<!--',...fieldLines,'-->'].join('\n')+'\n',
   fenced:()=>['# progress','\`\`\`',...fieldLines,'\`\`\`'].join('\n')+'\n',
+  secondComment:()=>['<!-- first --> <!--',...fieldLines,'-->'].join('\n'),
+  continuedComment:()=>['<!-- first','--> <!-- second',...fieldLines,'-->'].join('\n'),
+  quotedFence:()=>['> ~~~',...fieldLines.map(line=>'> '+line),'> ~~~'].join('\n'),
+  listFence:()=>['> - ~~~',...fieldLines.map(line=>'> '+line),'> ~~~'].join('\n'),
+  fakeFenceClose:()=>['~~~md','example','~~~not-a-close',...fieldLines,'~~~'].join('\n'),
+  visibleComments:()=>fieldLines.map(line=>'<!-- first --> <!-- second --> '+line+' <!-- tail -->').join('\n'),
+  afterQuotedFence:()=>['> ~~~~md','> example','> ~~~~~  ',...fieldLines].join('\n'),
+  afterLiteralFenceComment:()=>['~~~ <!-- literal info','<!-- literal body','~~~',...fieldLines].join('\n'),
+  fakeListClose:()=>['~~~','- ~~~',...fieldLines,'~~~'].join('\n'),
+  fakeHeadingClose:()=>['~~~','# ~~~',...fieldLines,'~~~'].join('\n'),
+  fakeIndentClose:()=>['~~~','    ~~~',...fieldLines,'~~~'].join('\n'),
+  fakeQuoteClose:()=>['~~~','> ~~~',...fieldLines,'~~~'].join('\n'),
+  nestedListQuoteFence:()=>['- > ~~~',...fieldLines.map(line=>'  > '+line),'  > ~~~'].join('\n'),
+  afterListFence:()=>['- ~~~','  sample','  ~~~',...fieldLines].join('\n'),
+  afterNestedListQuoteFence:()=>['- > ~~~','  > sample','  > ~~~',...fieldLines].join('\n'),
+  afterHeadingFenceText:()=>['# ~~~',...fieldLines].join('\n'),
   preface:()=>['# progress','- 下一步：等协调者补充（示例模板，不是账本表头）',ledgerHeader()].join('\n'),
   reordered:()=>[fieldLines[1],fieldLines[0],...fieldLines.slice(2)].join('\n')+'\n',
   reorderedRest:()=>[fieldLines[0],fieldLines[4],fieldLines[2],fieldLines[1],fieldLines[3]].join('\n')+'\n'
@@ -252,6 +272,40 @@ test('a fenced template cannot satisfy the ledger gate',()=>{
     assert.ok(data.errors.some(e=>e.includes('wish-id')));
   },{ledger:'fenced'});
 });
+for(const ledger of ['secondComment','continuedComment','quotedFence','listFence','fakeFenceClose'])test(`hidden ledger regression: ${ledger}`,()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    assert.equal(result.status,2);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ok,false);
+    assert.equal(data.ledger,false);
+    assert.deepEqual(data.next_actions,[]);
+  },{ledger});
+});
+for(const ledger of ['fakeListClose','fakeHeadingClose','fakeIndentClose','fakeQuoteClose','nestedListQuoteFence'])test(`fence context regression rejected: ${ledger}`,()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(result.status,2);
+    assert.equal(data.ledger,false);
+    assert.deepEqual(data.next_actions,[]);
+  },{ledger});
+});
+for(const ledger of ['afterListFence','afterNestedListQuoteFence','afterHeadingFenceText'])test(`fence context regression visible: ${ledger}`,()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(result.status,0);
+    assert.equal(data.ledger,true);
+    assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
+  },{ledger});
+});
+for(const ledger of ['visibleComments','afterQuotedFence','afterLiteralFenceComment'])test(`visible ledger regression: ${ledger}`,()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    assert.equal(result.status,0);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,true);
+    assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
+  },{ledger});
+});
+
 test('a stray field line above the wish-id line does not open the ledger block',()=>{
   cli(JSON.stringify(fixture()),result=>{
     assert.equal(result.status,0);
@@ -1282,6 +1336,61 @@ test('paths with spaces and brackets are attributed verbatim', t => {
     assert.ok(material.includes('// bracketed'));
   } finally { wipe(dir, snap, out); }
 });
+
+// Git stores executable bits in its index/tree on Windows too; do not emulate Unix chmod.
+for (const scenario of ['staged', 'committed', 'index-over-commit', 'dirty-index-restore', 'dirty-index-unchanged', 'dirty-index-committed', 'legacy-dirty-index']) {
+  test('Git mode regression: ' + scenario, t => {
+    if (!hasGit) { t.skip('git unavailable'); return; }
+    const file = 'src/run.sh';
+    const {dir, git} = initRepo({[file]: 'echo hello\n'});
+    const snap = path.join(workRoot(), path.basename(dir) + '-mode-snap.json');
+    const out = path.join(workRoot(), path.basename(dir) + '-mode-material.md');
+    try {
+      git('config', 'core.filemode', 'false');
+      git('update-index', '--chmod=-x', file);
+      const dirty = scenario.startsWith('dirty-') || scenario === 'legacy-dirty-index';
+      if (dirty) git('update-index', '--chmod=+x', file);
+      runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+      if (scenario === 'legacy-dirty-index') {
+        const old = JSON.parse(fs.readFileSync(snap, 'utf8'));
+        for (const entry of Object.values(old.dirty)) {
+          for (const key of ['index', 'head']) if (entry[key] && typeof entry[key] === 'object') entry[key] = entry[key].blob;
+        }
+        fs.writeFileSync(snap, JSON.stringify(old));
+      }
+      if (scenario === 'dirty-index-restore' || scenario === 'legacy-dirty-index') git('update-index', '--chmod=-x', file);
+      else if (!dirty) git('update-index', '--chmod=+x', file);
+      if (['committed', 'index-over-commit', 'dirty-index-committed'].includes(scenario)) git('commit', '-q', '-m', 'mode');
+      if (scenario === 'index-over-commit') git('update-index', '--chmod=-x', file);
+      const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+      const material = materialOf(out);
+      if (scenario === 'legacy-dirty-index') {
+        assert.equal(data.integrity.status, 'incomplete');
+        assert.ok(data.integrity.limits.some(limit => /mode/i.test(limit.reason)), 'missing legacy mode must be explicit');
+        assert.equal(layers(data.pre_existing, file).includes('baseline'), false, 'unknown mode cannot prove unchanged');
+        return;
+      }
+      assert.equal(data.integrity.status, 'complete');
+      const expectedTask = scenario === 'staged' ? ['index'] : scenario === 'committed' ? ['committed'] : scenario === 'index-over-commit' ? ['committed', 'index'] : [];
+      assert.deepEqual(layers(data.task, file), expectedTask);
+      assert.deepEqual(layers(data.pre_existing_also_modified, file), scenario === 'dirty-index-restore' ? ['index'] : []);
+      assert.deepEqual(layers(data.pre_existing, file), scenario === 'dirty-index-unchanged' ? ['baseline'] : scenario === 'dirty-index-committed' ? ['committed'] : []);
+      assert.deepEqual(data.committed, ['committed', 'index-over-commit', 'dirty-index-committed'].includes(scenario) ? [file] : []);
+      assert.deepEqual(data.staged, ['staged', 'index-over-commit', 'dirty-index-unchanged'].includes(scenario) ? [file] : []);
+      assert.deepEqual(data.unstaged, []);
+      if (scenario !== 'dirty-index-unchanged') {
+        assert.ok(material.includes('100644'), 'old mode is reviewable');
+        assert.ok(material.includes('100755'), 'new mode is reviewable');
+      }
+      if (dirty) {
+        const saved = JSON.parse(fs.readFileSync(snap, 'utf8')).dirty[file];
+        assert.equal(saved.index.mode, '100755');
+        assert.equal(saved.head.mode, '100644');
+        assert.equal(saved.index.blob, saved.head.blob, 'test changes mode only, never content');
+      }
+    } finally { wipe(dir, snap, out); }
+  });
+}
 
 // ---- 第六轮全量审查修复（2.3.13）--------------------------------------------
 
@@ -2379,6 +2488,38 @@ test('file content with consecutive blank lines is reproduced verbatim', t => {
     assert.equal(data.integrity.status, 'complete');
     assert.ok(materialOf(out).includes('A\n\n\n\nB'),
       'blank lines inside file content must survive into the material');
+  } finally { wipe(dir, snap, out); }
+});
+
+test('a clean worktree matching the commit is explained by the commit layer, not re-reported', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, git, write} = initRepo({'src/a.js': 'BASE\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-explained-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-explained-material.md');
+  try {
+    // P1-A regression: a clean tracked baseline compares by Git content id, and the commit
+    // layer stores the HEAD blob object id in .blob (its .sha256 is the byte digest, a
+    // different namespace a content id can never equal). A worktree whose content matches
+    // the commit is covered by the committed layer even while the index diverges.
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    write('src/a.js', 'TASK_COMMIT\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'task');
+    write('src/a.js', 'TASK_INDEX\n');
+    git('add', 'src/a.js');
+    write('src/a.js', 'TASK_COMMIT\n');
+    const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.ok(data.committed.includes('src/a.js'), 'the commit layer must be visible');
+    assert.ok(data.staged.includes('src/a.js'), 'the diverged index must be visible');
+    assert.deepEqual(layers(data.task, 'src/a.js'), ['committed', 'index'],
+      'a worktree matching the commit is explained by it, no redundant worktree record');
+    assert.equal(data.integrity.status, 'complete');
+    // Back at the pre-task value the worktree layer is net zero again.
+    write('src/a.js', 'BASE\n');
+    fs.unlinkSync(out);
+    const restored = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.deepEqual(layers(restored.task, 'src/a.js'), ['committed', 'index'],
+      'restored to the baseline content the worktree layer is gone');
   } finally { wipe(dir, snap, out); }
 });
 

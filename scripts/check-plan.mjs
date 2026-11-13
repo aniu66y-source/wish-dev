@@ -140,7 +140,7 @@ export function validatePlan(plan) {
 
 // A scheduling hint, not an executor or a permission grant. Validate the plan first.
 export function nextActions(plan) {
-  const tasks=plan.stories;
+  const tasks=plan?.stories??[];
   // A pending package already at the repair budget must not be dispatched again; it needs
   // a blocked mark or an authorised budget raise. A running one is the final fix already
   // started, so it is observed instead of reported as a blocker.
@@ -176,9 +176,12 @@ const LEDGER_HEADER_START=40;
 const LEDGER_HEADER_SPAN=15;
 const TABLE_SEPARATOR=/^\|[\s:|-]+\|$/;
 
+function stripLedgerPrefix(line){
+  return line.trim().replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^(?:[-*+]|\d+[.)])\s+/,'');
+}
+
 function normalizeLedgerLine(line){
-  let value=line.trim();
-  value=value.replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^(?:[-*+]|\d+[.)])\s+/,'');
+  let value=stripLedgerPrefix(line);
   value=value.replace(/^(\*\*|__|`)(.+?)([:：])\1/,'$2$3');
   value=value.replace(/^(\*\*|__|`)(.+?)\1\s*([:：])/,'$2$3');
   if(value.startsWith('|')){
@@ -192,6 +195,35 @@ function headerLine(value,raw){
   return value===''||LEDGER_FIELDS.some(([,pattern])=>pattern.test(value))||TABLE_SEPARATOR.test(raw.trim());
 }
 
+// Fence containers are syntax, not ledger decoration: a list marker or heading in code
+// cannot close a fence. Remember list continuation widths and quote nesting separately.
+function ledgerFence(line,containers=null){
+  let value='';
+  for(const char of line)value+=char==='\t'?' '.repeat(4-value.length%4):char;
+  const context=containers??[];
+  if(containers){
+    for(const container of containers){
+      if(container==='quote'){
+        const quote=value.match(/^ {0,3}> ?/);
+        if(!quote)return null;
+        value=value.slice(quote[0].length);
+      }else{
+        if(!value.startsWith(' '.repeat(container)))return null;
+        value=value.slice(container);
+      }
+    }
+  }else{
+    while(true){
+      const prefix=value.match(/^ {0,3}(> ?|(?:[-*+]|\d{1,9}[.)]) +)/);
+      if(!prefix)break;
+      context.push(prefix[1].startsWith('>')?'quote':prefix[0].length);
+      value=value.slice(prefix[0].length);
+    }
+  }
+  const marker=value.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+  return marker?{marker:marker[1],tail:marker[2],containers:context}:null;
+}
+
 // Hidden regions are not the ledger: an HTML comment renders nowhere, and a fenced code
 // sample renders as code, so neither can satisfy the write-ahead gate. Line indexes are
 // preserved so the "within the first 40 lines" window still means the visible file.
@@ -200,25 +232,32 @@ function maskHidden(lines){
   let fence=null;
   let inComment=false;
   for(const line of lines){
-    if(inComment){
-      const close=line.indexOf('-->');
-      if(close<0){visible.push('');continue;}
-      inComment=false;
-      visible.push(line.slice(close+3));
-      continue;
-    }
-    const marker=line.trim().match(/^(`{3,}|~{3,})/);
     if(fence){
-      if(marker&&marker[1][0]===fence[0]&&marker[1].length>=fence.length)fence=null;
+      const close=ledgerFence(line,fence.containers);
+      if(close&&close.marker[0]===fence.marker[0]&&close.marker.length>=fence.marker.length&&/^\s*$/.test(close.tail))fence=null;
       visible.push('');
       continue;
     }
-    if(marker){fence=marker[1];visible.push('');continue;}
-    const open=line.indexOf('<!--');
-    if(open<0){visible.push(line);continue;}
-    const close=line.indexOf('-->',open+4);
-    if(close<0){inComment=true;visible.push(line.slice(0,open));continue;}
-    visible.push(line.slice(0,open)+line.slice(close+3));
+    let value='';
+    let cursor=0;
+    while(cursor<line.length){
+      if(inComment){
+        const close=line.indexOf('-->',cursor);
+        if(close<0)break;
+        inComment=false;
+        cursor=close+3;
+      }else{
+        const open=line.indexOf('<!--',cursor);
+        if(open<0){value+=line.slice(cursor);break;}
+        value+=line.slice(cursor,open);
+        inComment=true;
+        cursor=open+4;
+      }
+    }
+    const marker=ledgerFence(value);
+    // Once a fence opens, comment tokens on that line are literal code/info text.
+    if(marker){fence=marker;inComment=false;visible.push('');}
+    else visible.push(value);
   }
   return visible;
 }
