@@ -5,6 +5,8 @@
 
 ## 2.3.16 — 2026-11-13
 
+已正式发布：[v2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)。
+
 第七轮全量审查（28 个跟踪文件、三条门禁全绿为基线）后的 P2/P3 修复；未改 `check-plan.mjs` 的账本与门禁语义。
 
 **门禁**
