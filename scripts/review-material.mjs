@@ -369,6 +369,36 @@ function worktreeContentId(repo, file) {
 // Content view is the single place that decides "can this be shown completely?".
 // `complete` is false for binary, oversized, truncated and unreadable content, and the
 // caller records exactly one integrity entry for it.
+// Text is only shown when the bytes round-trip through UTF-8 unchanged. Otherwise the
+// decoder would silently substitute U+FFFD and the material would present characters the
+// file does not contain; such content is reported as undecodable instead.
+function decodesAsUtf8(slice) {
+  return Buffer.from(slice.toString('utf8'), 'utf8').equals(slice);
+}
+
+// Blank lines are collapsed only outside fenced blocks: inside a fence the bytes belong to
+// quoted file content and must survive verbatim, however many blank lines it carries.
+function collapseBlankLines(text) {
+  const out = [];
+  let fence = null;
+  for (const line of text.split('\n')) {
+    const marker = line.match(/^\s*(`{3,}|~{3,})/);
+    if (fence) {
+      out.push(line);
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (marker) {
+      fence = marker[1];
+      out.push(line);
+      continue;
+    }
+    if (line.trim() === '' && out.length && out[out.length - 1].trim() === '') continue;
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 function worktreeView(repo, file) {
   const fingerprint = fingerprintPath(repo, file);
   if (fingerprint.status !== 'ok') {
@@ -392,6 +422,11 @@ function worktreeView(repo, file) {
         bytes: fingerprint.size, truncated: false};
     }
     const truncated = fingerprint.size > read;
+    // A truncated slice may end mid-codepoint, so only complete reads are judged.
+    if (!truncated && !decodesAsUtf8(slice)) {
+      return {kind: 'undecodable', complete: false, fingerprint, ref: file, text: null,
+        bytes: fingerprint.size, truncated: false};
+    }
     return {kind: 'text', complete: !truncated, fingerprint, ref: file,
       text: slice.toString('utf8'), bytes: fingerprint.size, truncated};
   } catch {
@@ -427,6 +462,10 @@ function blobView(repo, sha) {
       bytes: buffer.length, truncated: false};
   }
   const truncated = buffer.length > CONTENT_LIMIT;
+  if (!truncated && !decodesAsUtf8(slice)) {
+    return {kind: 'undecodable', complete: false, fingerprint, ref: 'blob:' + sha, text: null,
+      bytes: buffer.length, truncated: false};
+  }
   return {kind: 'text', complete: !truncated, fingerprint, ref: 'blob:' + sha,
     text: slice.toString('utf8'), bytes: buffer.length, truncated};
 }
@@ -1483,7 +1522,7 @@ function collect(repo, options) {
     if (headerIndex >= 0) lines[headerIndex] = `- 完整性：incomplete（${limits.length} 项见第 8 节）`;
   }
 
-  const material = lines.join('\n').replace(/\n{3,}/g, '\n\n');
+  const material = collapseBlankLines(lines.join('\n'));
   publishExclusive(options.out, material);
   summary.material_bytes = Buffer.byteLength(material, 'utf8');
   return summary;

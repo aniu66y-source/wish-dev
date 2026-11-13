@@ -1,4 +1,6 @@
 """Regression tests for tools/package_skill.py (stdlib unittest, no deps)."""
+import contextlib
+import io
 import json
 import os
 import sys
@@ -264,6 +266,14 @@ class TextResourceValidationTest(unittest.TestCase):
         # The broken example is ignored; a fenced reference to a packaged file still counts.
         self.assertEqual(result["internal_links_checked"], 2)
 
+    def test_link_title_and_angle_brackets_resolve_to_the_packaged_file(self):
+        body = ('[a](<guide.md>)\n'
+                '[b](guide.md "说明")\n'
+                "[c](<guide.md> 'note')\n")
+        result = self.validate_with({"references/notes.md": body.encode(),
+                                     "references/guide.md": b"# g\n"})
+        self.assertEqual(result["internal_links_checked"], 3)
+
     def test_missing_relative_link_is_still_rejected(self):
         with self.assertRaises(ValueError) as caught:
             self.validate_with({"references/notes.md": b"[gone](scripts/none.mjs)\n"})
@@ -300,6 +310,57 @@ class VersionDriftTest(unittest.TestCase):
     def test_a_readme_without_a_current_version_is_reported(self):
         self.assertTrue(any("未写出" in issue
                             for issue in self.drift_for(["# 项目"])))
+
+    def test_latest_release_wording_is_checked(self):
+        issues = self.drift_for(["- 最新正式版：[1.1.0](https://example.invalid/tag)"])
+        self.assertTrue(any("1.1.0" in issue for issue in issues), issues)
+
+    def test_historical_versions_on_the_same_line_are_not_drift(self):
+        self.assertEqual(self.drift_for(
+            ["- 最新正式版：[1.2.3](https://example.invalid/tag)，上一版 1.1.0"]), [])
+
+
+class ContractAnchorGateTest(unittest.TestCase):
+    """A missing P0 contract anchor must fail the gate, not only report WEAK."""
+
+    HEAD = TextResourceValidationTest.HEAD
+
+    def test_a_missing_anchor_fails_validation(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT")) as tmp:
+            root = Path(tmp)
+            (root / "SKILL.md").write_text(self.HEAD, encoding="utf-8", newline="\n")
+            original = skill.ROOT
+            skill.ROOT = root
+            stderr = io.StringIO()
+            try:
+                with mock.patch.object(skill, "contract_gaps",
+                                       return_value=["SKILL.md 缺少锚点「^## 交工标准」"]), \
+                     mock.patch.object(sys, "argv", ["package_skill.py", "--check"]), \
+                     contextlib.redirect_stderr(stderr):
+                    status = skill.main()
+            finally:
+                skill.ROOT = original
+        self.assertEqual(status, 1, "a missing anchor must fail the gate")
+        self.assertIn("契约锚点", stderr.getvalue())
+
+
+class BlockedDirectoryCaseTest(unittest.TestCase):
+    def test_a_blocked_directory_is_matched_case_insensitively(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT")) as tmp:
+            root = Path(tmp)
+            (root / "SKILL.md").write_text(TextResourceValidationTest.HEAD,
+                                           encoding="utf-8", newline="\n")
+            vendored = root / "references" / "NODE_MODULES"
+            vendored.mkdir(parents=True)
+            (vendored / "bundled.md").write_text("# v\n", encoding="utf-8", newline="\n")
+            (root / "references" / "kept.md").write_text("# k\n", encoding="utf-8", newline="\n")
+            original = skill.ROOT
+            skill.ROOT = root
+            try:
+                names = [path.relative_to(root).as_posix() for path in skill.resources()]
+            finally:
+                skill.ROOT = original
+        self.assertEqual(sorted(names), ["SKILL.md", "references/kept.md"])
 
 
 if __name__ == "__main__":

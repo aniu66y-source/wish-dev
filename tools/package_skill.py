@@ -24,7 +24,8 @@ BLOCKED_SUFFIXES = {".pyc", ".pyo", ".log", ".tmp", ".temp", ".bak", ".swp", ".s
                     ".zip", ".tar", ".gz", ".map", ".cache", ".sqlite", ".db", ".env"}
 TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs", ".svg"}
 # Contract anchors: the load-bearing rules a later edit must not silently drop.
-# Missing anchors are reported as WEAK, never as a non-zero exit.
+# A missing anchor fails validation: a skill that silently lost a hard rule is not
+# shippable, so this gates the exit code instead of only weakening a quality report.
 CONTRACT_ANCHORS = {
     "SKILL.md": (r"^## 主对话边界", r"^## 交工标准", r"check-plan\.mjs", r"禁止调用\*\*任何团队",
                  r"^### 宿主每轮动作硬规则", r"^\*\*领导层执行白名单\*\*",
@@ -58,7 +59,9 @@ def resources():
             if not path.is_file():
                 continue
             parts = path.relative_to(ROOT).parts
-            if any(part in BLOCKED_DIRS for part in parts):
+            # Directory names compare case-insensitively: the same tree arrives from hosts
+            # whose filesystem (or the maintainer's hands) spells NODE_MODULES differently.
+            if any(part.lower() in BLOCKED_DIRS for part in parts):
                 continue
             # Hidden resource files are refused instead of dropped: a silently skipped
             # file is a file the package does not contain and nobody notices.
@@ -123,8 +126,15 @@ def version_drift():
         # stale mention (install table, release note) is drift the gate must see.
         advertised = []
         for line in readme.read_text(encoding="utf-8").splitlines():
-            if re.search(r"当前(?:正式版|版本|发布版)", line):
-                advertised.extend(re.findall(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])", line))
+            # "当前…" and "最新…" both advertise the shipped version; a bare 最新 mention
+            # used to slip past the gate because only 当前 was recognised.
+            if not re.search(r"(?:当前|最新)(?:正式版|版本|发布版|发布版本)", line):
+                continue
+            # Only the first version on an advertised line is the claim. Later versions on
+            # the same line are release history and must not read as drift.
+            found = re.search(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])", line)
+            if found:
+                advertised.append(found[1])
         if not advertised:
             issues.append("README.md 未写出当前版本号")
         for found in sorted(set(advertised)):
@@ -418,6 +428,13 @@ def validate(files):
                 masked = masked_markdown(source)
                 for match in re.finditer(r"\]\(([^)]+)\)", source):
                     target = match.group(1).strip()
+                    # A destination may be angle-bracketed and may carry a trailing title;
+                    # neither belongs to the path that the archive actually contains.
+                    if target.startswith("<"):
+                        end = target.find(">")
+                        target = (target[1:end] if end != -1 else target[1:]).strip()
+                    elif " " in target:
+                        target = target.split(" ", 1)[0]
                     # Any URI scheme (https, mailto, ...) and pure fragments are not
                     # packaged files; only relative paths are checked.
                     if target.startswith("#") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
@@ -489,6 +506,11 @@ def main():
     try:
         files = resources()
         result = validate(files)
+        # Contract anchors gate the exit code: a silently dropped hard rule must stop the
+        # check and the package, not merely weaken a quality dimension.
+        gaps = result["skill_quality"]["contract_gaps"]
+        if gaps:
+            raise ValueError("契约锚点缺失（契约硬规则被删改）：" + "; ".join(gaps))
         if not args.check:
             target = args.output or ROOT / "packages" / ("wish-dev-" + result["version"] + ".zip")
             result.update(package(files, result, target))

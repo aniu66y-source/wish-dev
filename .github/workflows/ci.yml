@@ -20,6 +20,8 @@ jobs:
         python: ["3.10", "3.11"]
         node: ["18", "20"]
     runs-on: ${{ matrix.os }}
+    # A hung runner would otherwise wait out the 360-minute default and hide the failure.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

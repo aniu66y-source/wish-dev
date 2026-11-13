@@ -3,6 +3,31 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.16 — 2026-11-13
+
+第七轮全量审查（28 个跟踪文件、三条门禁全绿为基线）后的 P2/P3 修复；未改 `check-plan.mjs` 的账本与门禁语义。
+
+**门禁**
+
+- 契约锚点从「只报 WEAK」改为阻断：任一 P0 锚点缺失即 `exit 1`（在 `package_skill.py` 主流程校验），避免硬规则被静默删除后仍然全绿；README 的质量门说明同步。
+- 版本漂移校验补上「最新正式版/最新发布版本」措辞，且每行只取第一个版本号——同行列出的历史版本不再误报。
+- 内部链接解析支持 `<path>` 与 `... "title"` 两种合法 Markdown 写法，此前会被误判为 Missing packaged reference。
+- 资源白名单的 `BLOCKED_DIRS` 改为大小写不敏感比较，Windows 上 `NODE_MODULES/` 之类目录不再被当作可打包资源。
+
+**评审材料忠实性**
+
+- 不再对整篇材料折叠空行：只折叠围栏外的连续空行，围栏内引用的文件正文逐字保留（此前 3 个以上连续空行会被改写为 2 个）。
+- 非法 UTF-8 内容（无 NUL 字节）不再静默替换为 U+FFFD：记为 `undecodable`、`integrity: incomplete`，且不展示被替换后的正文。
+
+**文档**
+
+- README 更正版本字段为 `metadata.version`（原文写 `version`，按此新增会被 frontmatter 校验拒绝）。
+- README 验证范围补记 2.3.15 的 SC-02 C/D 采样（此前只写到 2.3.9）；概述的阶段顺序与 12 阶段表一致（此前调研排在需求之前），修复预算措辞与「必填、无内置兜底」对齐。
+- `plan-contract.md` 说明账本判定会先屏蔽围栏与 HTML 注释（示例整段在围栏内，照抄会被判 `ledger field missing`）；`max_fix_attempts` 表述改为「通常取 3、必填无兜底」；`link` 限制口径与采集器实现对齐。
+- 新增 7 条回归：契约锚点阻断、最新措辞与同行历史版本、title/尖括号链接、大小写目录、连续空行、非法 UTF-8；CI 加 `timeout-minutes: 20`。
+
+**已知残留**：本次在 Node 24.21.0 / Python 3.14.7 上验证，声明的下限（Node 18 / Python 3.10）仍只由 CI 八组矩阵覆盖；未跑行为评估，2.3.15 的采样结论不因本次修改而变化。
+
 ## 2.3.15 — 2026-11-13
 
 已正式发布：[v2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)。

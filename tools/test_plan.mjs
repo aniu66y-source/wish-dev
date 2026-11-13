@@ -2366,3 +2366,36 @@ test('staging pre-existing user content stays pre-existing and is described accu
     assert.ok(!material.includes('当前内容与任务开始时不同'));
   } finally { wipe(dir, snap, out); }
 });
+
+test('file content with consecutive blank lines is reproduced verbatim', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, write} = initRepo({'src/a.js': 'base\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-blank-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-blank-material.md');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    write('src/gaps.txt', 'A\n\n\n\nB\n');
+    const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.equal(data.integrity.status, 'complete');
+    assert.ok(materialOf(out).includes('A\n\n\n\nB'),
+      'blank lines inside file content must survive into the material');
+  } finally { wipe(dir, snap, out); }
+});
+
+test('content that is not valid UTF-8 is recorded as an integrity limit', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, write} = initRepo({'src/a.js': 'base\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-utf8-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-utf8-material.md');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    write('src/latin.txt', Buffer.from([0x41, 0xff, 0x42, 0x0a]));
+    const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.equal(data.integrity.status, 'incomplete');
+    const entry = data.integrity.limits.find(item => item.file === 'src/latin.txt');
+    assert.ok(entry, 'undecodable content must be recorded as a limit');
+    assert.equal(entry.kind, 'undecodable');
+    assert.ok(!materialOf(out).includes('\ufffd'),
+      'replacement characters must never be presented as if they were the content');
+  } finally { wipe(dir, snap, out); }
+});

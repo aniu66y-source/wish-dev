@@ -4,24 +4,24 @@
 > 采用通用 Agent Skills 目录结构，适用于**能派生子智能体且支持工具调用的 agent 软件宿主**。
 
 ## 是什么
-给宿主 agent 装上后，用户提需求即按 12 阶段生命周期自主推进到交工：调研 → 需求 → 设计 → 选型 → UI/UE → 架构 → 工程 → 分包并行 → 集成评审 → 部署 → 上线验收 → 交工。主对话只作领导层（规划/审核/授权/面向用户汇报），执行全下沉宿主子智能体。
+给宿主 agent 装上后，用户提需求即按 12 阶段生命周期自主推进到交工：需求澄清 → 调研 → 产品方案 → 选型 → UI/UE → 架构 → 工程 → 分包并行 → 集成评审 → 部署 → 上线验收 → 交工。主对话只作领导层（规划/审核/授权/面向用户汇报），执行全下沉宿主子智能体。
 
 ## 怎么做
 - **动态分包账本**：`prd.json`（机器计划）+ `progress.md`（追加记录）双硬门；未落账本 `check-plan.mjs` 即 `exit 2`，不允许开工。
 - **独立评审 + 代码结构审查**：实现上下文与评审上下文隔离；每轮审查相关模块与调用链，禁以 TODO 放行必须整改项。
 - **修根因**：不在错误结构上堆补丁/补偿分支/新旧竞争方案；触及历史结构问题时安排必要重构，不扩大为无关全仓重写。
-- **卡点主动联网 + 熔断**：修复预算有界（默认 3 次）；预算耗尽仍失败、连续 3 次无进展或已确认同根因失败 3 次时，该线进入 `blocked` 并记录恢复条件；其他独立包可继续推进。
+- **卡点主动联网 + 熔断**：修复预算有界（通常取 3 次，`prd.json` 必填、无内置兜底）；预算耗尽仍失败、连续 3 次无进展或已确认同根因失败 3 次时，该线进入 `blocked` 并记录恢复条件；其他独立包可继续推进。
 
 ## 不同点
 不写死包数与并行度；不堆补丁、不掩盖根因；要求上线就不许本地演示交工；中断恢复不重置失败计数；账本未落盘 `exit 2` 不开工。
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.15**，已发布：修复快照及采集输出的链接与并发写入问题）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.16**，已发布：第七轮全量审查的门禁覆盖、材料忠实性与文档口径修复）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 最新正式版：[2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)，发布于 2026-11-13。上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
-- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），见 [行为评估](tools/eval/README.md)，不能据此宣称跨宿主或全部行为验收通过
+- 最新正式版：[2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)，发布于 2026-11-13。上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
+- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），2.3.15 另有 SC-02 变体 C/D 的 RED/GREEN 各 5 次采样（RED C 2/5、RED D 4/5，GREEN 各 5/5），见 [行为评估](tools/eval/README.md)；2.3.16 只改门禁、材料忠实性与文档，未新增行为采样，不能据此宣称跨宿主或全部行为验收通过
 
 ---
 
@@ -46,7 +46,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（最新发布版本为 2.3.15），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（最新发布版本为 2.3.16），按宿主规则导入 |
 | 目录复制 | 解压 Release ZIP，将其中完整 `wish-dev/` 目录复制到宿主 skills 目录；不要只拷 SKILL.md，也不要把整个源码仓库当安装包 |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
@@ -97,7 +97,7 @@
 | **敏感凭据隔离** | 已授权的项目级非敏感配置按需补齐；密钥使用宿主支持的安全引用，涉及全局/账号/费用变化核对授权 |
 | **真实验收** | 要求上线时不以本地演示交工；构建成功 ≠ 功能通过；整体验收须真实证据 |
 | **账本落盘门禁** | 派发首个子智能体任务前须同时落 `prd.json` + `progress.md`（5 字段表头须为连续块，窗口与写法细则见 [plan-contract.md](references/plan-contract.md)）；`check-plan.mjs` 缺账本或表头不成立即 `exit 2` + `ledger:false`，账本未落不进产品实现 |
-| **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions）；质量维度只报告不阻断，但 frontmatter、内部链接、JS 语法或 CRLF 行尾错误仍会 exit 1 |
+| **SKILL 质量门** | `package_skill.py --check` 输出 7 维质量报告（completeness/examples/conciseness/crossPlatform/license/contracts/versions）；质量维度只报告不阻断，但 frontmatter、内部链接、JS 语法、CRLF 行尾或契约锚点缺失（P0 规则被删改）仍会 exit 1 |
 | **中断恢复** | 检查点持久化，宿主关闭后需重新发起，不承诺自动唤醒 |
 
 ---
@@ -155,7 +155,7 @@ mkdir -p "$WISH_DEV_RUNTIME_ROOT"
 ```bash
 # 1. 结构校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 输出含 skill_quality（7 维质量报告：contracts 校验 4 个文件的 24 条契约锚点，含 P0 保护规则；versions 校验 SKILL/CHANGELOG/README 版本一致）、internal_links 命中数，
+# 输出含 skill_quality（7 维质量报告：contracts 校验 4 个文件的 24 条契约锚点，含 P0 保护规则，缺锚点即 exit 1；versions 校验 SKILL/CHANGELOG 与 README 中「当前…」「最新…」行声明的版本一致，同一行只取首个版本号）、internal_links 命中数，
 # 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）。
 # frontmatter 按仓库支持的简化 YAML 子集真解析：未闭合语法、流式集合、块标量、重复键、version 层级错误、
 # 未加引号的 version、非法转义、会歧义成布尔/null/数字的裸值一律 exit 1（能力范围见下方说明）。
