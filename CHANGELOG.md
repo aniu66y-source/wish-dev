@@ -5,7 +5,7 @@
 
 ## 2.3.13 — 2026-11-13
 
-未发布（开发版，无 tag；发布时另记）。第六轮**全量审查**（P0 0 / P1 1 / P2 10 / P3 17）修复：1 个 P1、10 个 P2 全部修复；17 个 P3 中 13 项修复、1 项复核后确认已满足、3 项按设计不改并写明理由（见末条）。Node 测试 124 → 135，Python 单测 19 → 28。发布不等于已安装到宿主。
+已正式发布：[v2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)。第六轮**全量审查**（P0 0 / P1 1 / P2 10 / P3 17）修复：1 个 P1、10 个 P2 全部修复；17 个 P3 中 13 项修复、1 项复核后确认已满足、3 项按设计不改并写明理由（见末条）。Node 测试 124 → 135，Python 单测 19 → 28。发布不等于已安装到宿主。
 
 - **P1-1：干净跟踪文件改用 Git 内容摘要比较基线**：`collect` 对"快照时干净"的跟踪文件用 HEAD blob 摘要冒充工作区基线（`blobFingerprint(root, headBlob)`），比较对象却是原始工作区字节摘要。`core.autocrlf=true`、`.gitattributes` 或 clean 过滤器让同一内容产生不同字节时，未改动的文件被判成工作区变化，同一份材料里出现两个"当前指纹"，归属被误判为 mixed / 任务前既有，而 `integrity` 仍报 complete。现基线记 `{status:'clean', sha256: headBlob}`，比较改用 `git hash-object`（经 clean 过滤器）得到的内容 id：变化判定、`explainedByIndex`/`explainedByCommit`、`attribute()` 三处统一按内容 id 比较，展示的基线摘要回退到 HEAD blob；回归用例在 `core.autocrlf=true` 下用 `git checkout` 造出 CRLF 工作区，验证"未改动不报变化、真改动仍报"。
 - **P2-02：无 Git 清单把链接记作 `link` 条目**：2.3.11 的守卫让清单跳过符号链接与联接点，但契约要求"两种模式都按 `link` 记入完整性"，结果是链接从清单里消失、删除时正文写"当前状态：已删除"、材料声明 complete（验收探针：非 Git 仓库里把文件换成联接点，材料只写"已删除"）。现 `manifest()` 对重解析点记录 `linkFingerprint`（只对 `readlink` 得到的链接自身目标字符串取 SHA-256，不递归、不跟随），无 Git 采集对每个链接补一条 `kind:'link'` 限制，`integrity` 转 incomplete；契约句同步改写为"记作 link 条目、按链接自身目标摘要判断是否变化"。
