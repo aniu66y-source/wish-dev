@@ -3,6 +3,26 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.13 — 2026-11-13
+
+未发布（开发版，无 tag；发布时另记）。第六轮**全量审查**（P0 0 / P1 1 / P2 10 / P3 17）修复：1 个 P1、10 个 P2 全部修复；17 个 P3 中 13 项修复、1 项复核后确认已满足、3 项按设计不改并写明理由（见末条）。Node 测试 124 → 135，Python 单测 19 → 28。发布不等于已安装到宿主。
+
+- **P1-1：干净跟踪文件改用 Git 内容摘要比较基线**：`collect` 对"快照时干净"的跟踪文件用 HEAD blob 摘要冒充工作区基线（`blobFingerprint(root, headBlob)`），比较对象却是原始工作区字节摘要。`core.autocrlf=true`、`.gitattributes` 或 clean 过滤器让同一内容产生不同字节时，未改动的文件被判成工作区变化，同一份材料里出现两个"当前指纹"，归属被误判为 mixed / 任务前既有，而 `integrity` 仍报 complete。现基线记 `{status:'clean', sha256: headBlob}`，比较改用 `git hash-object`（经 clean 过滤器）得到的内容 id：变化判定、`explainedByIndex`/`explainedByCommit`、`attribute()` 三处统一按内容 id 比较，展示的基线摘要回退到 HEAD blob；回归用例在 `core.autocrlf=true` 下用 `git checkout` 造出 CRLF 工作区，验证"未改动不报变化、真改动仍报"。
+- **P2-02：无 Git 清单把链接记作 `link` 条目**：2.3.11 的守卫让清单跳过符号链接与联接点，但契约要求"两种模式都按 `link` 记入完整性"，结果是链接从清单里消失、删除时正文写"当前状态：已删除"、材料声明 complete（验收探针：非 Git 仓库里把文件换成联接点，材料只写"已删除"）。现 `manifest()` 对重解析点记录 `linkFingerprint`（只对 `readlink` 得到的链接自身目标字符串取 SHA-256，不递归、不跟随），无 Git 采集对每个链接补一条 `kind:'link'` 限制，`integrity` 转 incomplete；契约句同步改写为"记作 link 条目、按链接自身目标摘要判断是否变化"。
+- **P2-08 / P2-10：链接基线的未变化与删除不再失真**：`sameFingerprint` 原来只认 `ok`/`ok`，未变化的链接每次 `collect` 都被报成 modified + 归属 unknown；声明范围内删除"基线为链接/不可读"的文件时，第 5 节落进兜底分支写"（无）"、`limit.kind` 记 missing，违反契约"删除必须显示真实摘要，不得写（无）"。现 `sameFingerprint` 增加 `link`/`link` 按摘要相等判定；`baselineView` 对非 `ok` 基线返回带指纹的视图；第 5 节新增 link/unreadable 分支（正文说明"未读取链接目标字节"，`limit.kind` 保留真实 kind）。
+- **P2-05：输出路径守卫防硬链接**：`assertSafeOutput` 只做组件级真实路径包含判定，`collect --out` 指向仓库文件的硬链接时解析出的路径在仓库外、写入却写穿仓库文件（验收探针：`--out` 硬链接覆盖了基线）。现对已存在的输出文件 `lstat`，`nlink > 1` 即拒（`--out is a hard link (nlink N); refusing to write through it`）。
+- **P2-06：入口按真实路径判定，经联接点调用不再静默空转**：两个脚本的入口守卫用 `import.meta.url === pathToFileURL(process.argv[1]).href` 比较字面路径，经联接点或符号链接调用时不等，脚本以 0 退出且零输出——门禁"通过"了但什么也没校验。现改用 `realPath` 比较（`review-material.mjs` 与 `check-plan.mjs` 各一个 `invokedDirectly()`），Windows 按大小写不敏感比较。回归用例经 junction 调用 CLI，断言输出文件真的生成。
+- **P2-03：账本 P0 门禁不再被隐藏区域满足**：5 字段整块包在 HTML 注释或围栏代码块里时，`ledgerStatus` 照样认账本、门禁放行（模板本身可过 P0）。现扫描前先 `maskHidden`（注释与三反引号/~~~ 围栏整行置空、行号不变，40 行窗口仍指可见文件），新增 3 个负例用例（注释模板、围栏模板均 exit 2 并报 wish-id 缺失）。
+- **P2-04：账本块起点必须落在 wish-id 行**：`progress.md` 第 2 行出现"下一步：…"这类散文时会被当成表头起点，随后 15 行窗口收不齐字段而误杀第 12 行的合法账本（exit 2）。现起点取首个 wish-id 行，找不到才回退到"首个任意字段行"；新增用例（散文在前、合法账本在后 → status 0 且 `next_actions` 正常）。
+- **P2-01 / P3-01 / P3-02 / P3-03：打包校验收口**：`validate()` 用 `path.suffix` 原大小写判文本集合，`resources()` 却按小写放行——`.MD`/`.PY`/`.MJS` 绕过 CRLF、UTF-8、`ast.parse`、`node --check` 与内部链接检查（实测加到镜像里 `--check` 仍 exit 0）。现统一按 `suffix.lower()` 判定；`.svg` 在可发布集合里却不在文本集合，补入；以 `.` 开头的资源文件原来被静默跳过（与"不能被静默遗忘"的注释相悖），改为拒绝并在错误里列出路径。内部链接检查先对注释与围栏做掩码：`mailto:` 等任意 URI 方案与纯片段跳过，围栏内的示例链接可以坏、指向真实文件的仍计入命中数（`internal_links_checked` 保持 44，不因掩码丢覆盖）。
+- **P2-07：版本漂移扫描 README 全部"当前版本"提法**：`version_drift()` 只匹配 `^- 当前版本…**x.y.z**` 一行，安装表格里"当前正式版为 2.3.10"这类过期提法完全看不见，`--check` 全绿而 `CHANGELOG` 写"无 drift"。现逐行扫描所有含"当前版本/当前正式版/当前发布版"的提法，取行内全部版本号，任一与 SKILL.md 不等即报 drift；新增 3 个单测（唯一提法、表格行过期、无提法）。README 相应改为"最新发布版本为 2.3.12"，避免未发布开发版与最近发布版并称"当前"。
+- **P3 收口**：空树对象不再写死 SHA-1 常量（`git hash-object -t tree --stdin` 取仓库对象格式对应的空树，失败才回退，新增 SHA-256 无关的单测路径）；`treeBlobs` 失败不再静默返回空 Map（抛错，`collect` 侧记 note + `committed` 层 `unreadable` 限制）；`snapshot` 显式拒绝 `--base`/`--snapshot` 而不是静默忽略；Git 不可用但仓库里有 `.git` 时在材料 note 里写明"按无 Git 模式采集，提交历史不参与比对"；`oldPath` 进入渲染（第 3–7 节的重命名记录带"重命名自"，第 7 节内容块单列一行），不再只写不读；`diffFor` 按 200 个路径分块，`run()` 检查 `spawnSync` 的 `error`（ENAMETOOLONG 之类不再变成 `git diff failed: null`）；README 的契约锚点说明改为"4 个文件 24 条"；CI 矩阵扩到 Python 3.10/3.11 × Node 18/20（8 组合，覆盖 README 声明的最低版本）。P3-11（`summary.deleted` 漏工作区层删除）复核后确认已由 `status` 的 `D` 分支与非 Git 清单差集覆盖，无需改动。
+- **P3-06 补覆盖**：新增"快照时已存在的链接按自身目标比较"、"已跟踪文件被换成链接"（Windows 无开发者模式时退化为 junction）、`core.autocrlf` 幻影变化、"空树随仓库对象格式"、两个入口守卫、"输出守卫拒硬链接"、"快照拒 `--base`/`--snapshot`"、"删除快照时的链接显示身份"等用例。
+- **P2-09 断言收口**：两处 `material.includes('mixed') || material.includes('须协调者核对')` 恒真（模板句里就有"mixed"），现按文件前缀断言 mixed 归属、并断言未跟踪新增不得带 mixed 标记；测试名"…without unbounded buffering"改为"…are reported as integrity limits"（断言只证明限制记录了 kind 与 incomplete，不证明缓冲行为）。
+- **按设计不改并记录**：P3-04 ZIP 非 bit-reproducible（契约未承诺，源文件 mtime 进 ZIP，只记录）；P3-05 不加 CI `skip=0` 门禁（是否 skip 由 runner 环境决定，本机无法验证 8.3/链接能力，加硬门禁可能把环境差异变成假红；本机实测 0 skip，CHANGELOG 如实标注）；P3-14 非 Git 模式没有内在仓库根，`--repo` 传目录即根（快照与采集同一口径，不引入额外规范化）。`reject()` 负例助手维持"错误非空"的弱断言：措辞契约由账本相关用例逐条断言，其余用例改断言措辞会把实现文案焊进测试。
+- **评估触发**：本版为脚本语义、门禁与文档口径修复，不改变模型行为指引，按 eval README 豁免口径未触发 RED/GREEN（采样数 0）。
+- **验证**：`package_skill.py --check` PASS（12 文件、44 链接、2 个 .mjs、24 条契约锚点全命中、7 维全 PASS、无 drift/gap）；`node --test tools/test_plan.mjs` 135 项通过（0 fail、0 skip，链接与 autocrlf 用例在本机真实执行）；`python -B -m unittest discover -s tools -p "test_*.py"` 28 项通过；`git diff --check` 干净，改动文件全部 LF。
+
 ## 2.3.12 — 2026-11-13
 
 已正式发布：[v2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)。第六轮审查 P2 缺陷收口：1 个数据泄露向修复 + 回归测试。发布不等于已安装到宿主。

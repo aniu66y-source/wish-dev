@@ -22,7 +22,7 @@ BLOCKED_DIRS = {"__pycache__", "node_modules", "dist", "packages", ".git", ".ven
                 ".pytest_cache", ".ruff_cache"}
 BLOCKED_SUFFIXES = {".pyc", ".pyo", ".log", ".tmp", ".temp", ".bak", ".swp", ".swo",
                     ".zip", ".tar", ".gz", ".map", ".cache", ".sqlite", ".db", ".env"}
-TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs"}
+TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs", ".svg"}
 # Contract anchors: the load-bearing rules a later edit must not silently drop.
 # Missing anchors are reported as WEAK, never as a non-zero exit.
 CONTRACT_ANCHORS = {
@@ -58,7 +58,12 @@ def resources():
             if not path.is_file():
                 continue
             parts = path.relative_to(ROOT).parts
-            if any(part.startswith(".") or part in BLOCKED_DIRS for part in parts):
+            if any(part in BLOCKED_DIRS for part in parts):
+                continue
+            # Hidden resource files are refused instead of dropped: a silently skipped
+            # file is a file the package does not contain and nobody notices.
+            if any(part.startswith(".") for part in parts):
+                rejected.append(path.relative_to(ROOT).as_posix())
                 continue
             suffix = path.suffix.lower()
             if suffix in BLOCKED_SUFFIXES or suffix not in PUBLISH_SUFFIXES:
@@ -114,12 +119,17 @@ def version_drift():
         issues.append("CHANGELOG.md 缺失")
     readme = ROOT / "README.md"
     if readme.is_file():
-        advertised = re.search(r"^-\s*当前版本[^\n]*\*\*(\d+\.\d+\.\d+)\*\*",
-                               readme.read_text(encoding="utf-8"), re.M)
+        # Every "current version" line is checked, not just the first one: a second
+        # stale mention (install table, release note) is drift the gate must see.
+        advertised = []
+        for line in readme.read_text(encoding="utf-8").splitlines():
+            if re.search(r"当前(?:正式版|版本|发布版)", line):
+                advertised.extend(re.findall(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])", line))
         if not advertised:
             issues.append("README.md 未写出当前版本号")
-        elif advertised[1] != version:
-            issues.append(f"README.md 写作 {advertised[1]}，SKILL.md 为 {version}")
+        for found in sorted(set(advertised)):
+            if found != version:
+                issues.append(f"README.md 写作 {found}，SKILL.md 为 {version}")
     return issues
 
 
@@ -331,6 +341,29 @@ def parse_frontmatter(body):
     return data
 
 
+def masked_markdown(source):
+    """Blank out HTML comments and fenced code blocks before collecting links.
+
+    Examples inside a fence and references inside an invisible comment are not links the
+    package must contain; requiring them made a documented sample fail the gate."""
+    def blank(match):
+        return re.sub(r"[^\n]", " ", match.group(0))
+    source = re.sub(r"<!--[\s\S]*?-->", blank, source)
+    lines = source.split("\n")
+    fence = None
+    for index, line in enumerate(lines):
+        marker = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if fence is None:
+            if marker:
+                fence = marker.group(1)
+                lines[index] = " " * len(line)
+        else:
+            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
+                fence = None
+            lines[index] = " " * len(line)
+    return "\n".join(lines)
+
+
 def validate(files):
     manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     front = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", manifest, re.S)
@@ -363,29 +396,44 @@ def validate(files):
     for path in files:
         if not path.resolve().is_relative_to(ROOT.resolve()):
             raise ValueError("Resource leaves repository: " + str(path))
-        if path.suffix in TEXT_SUFFIXES:
+        suffix = path.suffix.lower()
+        if suffix in TEXT_SUFFIXES:
             source = path.read_bytes()
             if b"\r\n" in source:
                 raise ValueError("CRLF line endings in " + str(path) + "; convert to LF")
             source = source.decode("utf-8")
             if "\ufffd" in source:
                 raise ValueError("Unicode replacement character in " + str(path))
-            if path.suffix == ".py":
+            if suffix == ".py":
                 ast.parse(source, filename=str(path))
-            if path.suffix in {".js", ".mjs"}:
+            if suffix in {".js", ".mjs"}:
                 if js_syntax(path):
                     js_checked += 1
                 else:
                     js_skipped += 1
-            if path.suffix == ".md":
-                for target in re.findall(r"\]\(([^)]+)\)", source):
-                    if "://" in target or target.startswith("#"):
+            if suffix == ".md":
+                # Comments and fenced blocks may hold examples with deliberately broken
+                # links: there a reference is counted when it resolves to a packaged file
+                # and never reported missing. Prose links are checked strictly.
+                masked = masked_markdown(source)
+                for match in re.finditer(r"\]\(([^)]+)\)", source):
+                    target = match.group(1).strip()
+                    # Any URI scheme (https, mailto, ...) and pure fragments are not
+                    # packaged files; only relative paths are checked.
+                    if target.startswith("#") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
                         continue
                     target = target.split("#", 1)[0]
+                    if not target:
+                        continue
+                    example = masked[match.start()] == " "
                     resolved = (path.parent / target).resolve()
                     if not resolved.is_relative_to(ROOT.resolve()):
+                        if example:
+                            continue
                         raise ValueError("Reference leaves skill: " + target)
                     if resolved not in packaged:
+                        if example:
+                            continue
                         raise ValueError("Missing packaged reference: " + target)
                     link_count += 1
     return {"name": str(name), "version": str(version),

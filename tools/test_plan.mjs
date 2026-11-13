@@ -186,7 +186,10 @@ const ledgers={
   boundaryOut:()=>pad(40)+fieldLines.join('\n')+'\n',
   horizontalRule:()=>[fieldLines[0],'---',...fieldLines.slice(1)].join('\n')+'\n',
   blankSeparated:()=>ledgerHeader().split('\n').join('\n\n'),
-  scattered:()=>['# progress','- wish-id: W-01','杂项说明：随便写','备注：进度还行','- acceptance: AC-01 保存后刷新可读取','- current-package: T-1-01','其他：略','- next-action: 派发 T-1-01','- blocker: 无'].join('\n')+'\n'
+  scattered:()=>['# progress','- wish-id: W-01','杂项说明：随便写','备注：进度还行','- acceptance: AC-01 保存后刷新可读取','- current-package: T-1-01','其他：略','- next-action: 派发 T-1-01','- blocker: 无'].join('\n')+'\n',
+  commented:()=>['# progress','<!--',...fieldLines,'-->'].join('\n')+'\n',
+  fenced:()=>['# progress','\`\`\`',...fieldLines,'\`\`\`'].join('\n')+'\n',
+  preface:()=>['# progress','- 下一步：等协调者补充（示例模板，不是账本表头）',ledgerHeader()].join('\n')
 };
 
 function cli(source, check, {ledger='full'}={}){
@@ -230,6 +233,30 @@ test('empty ledger cannot satisfy the gate',()=>{
     assert.equal(data.errors.length,1);
     for(const field of ['wish-id','acceptance','current-package','next-action','blocker'])assert.ok(data.errors[0].includes(field),field);
   },{ledger:'empty'});
+});
+test('an HTML-commented template cannot satisfy the ledger gate',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    assert.equal(result.status,2);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,false);
+    assert.ok(data.errors.some(e=>e.includes('wish-id')));
+  },{ledger:'commented'});
+});
+test('a fenced template cannot satisfy the ledger gate',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    assert.equal(result.status,2);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,false);
+    assert.ok(data.errors.some(e=>e.includes('wish-id')));
+  },{ledger:'fenced'});
+});
+test('a stray field line above the wish-id line does not open the ledger block',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    assert.equal(result.status,0);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.ledger,true);
+    assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
+  },{ledger:'preface'});
 });
 test('ledger missing one header field is rejected',()=>{
   cli(JSON.stringify(fixture()),result=>{
@@ -503,7 +530,7 @@ test('non-Git collect keeps a bogus .git out of the manifest like snapshot does'
   } finally { wipe(dir, snap, out); }
 });
 
-test('non-Git manifests never follow directory symlinks or junctions', t => {
+test('non-Git manifests record a link as itself and never follow it', t => {
   const base = fs.mkdtempSync(path.join(workRoot(), 'nogit-link-'));
   const dir = path.join(base, 'repo');
   const target = path.join(base, 'target');
@@ -532,16 +559,25 @@ test('non-Git manifests never follow directory symlinks or junctions', t => {
   }
   try {
     const data = runOk(['snapshot', '--repo', dir, '--out', snap]);
-    assert.equal(data.tracked_files, 1, 'only the repository-owned file may be tracked');
-    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(snap, 'utf8')).files), ['a.txt'],
-      'a file behind the link must not enter the snapshot manifest');
+    const snapFiles = JSON.parse(fs.readFileSync(snap, 'utf8')).files;
+    assert.deepEqual(Object.keys(snapFiles).sort(), ['a.txt', 'linked'],
+      'the link itself is recorded; nothing behind it may enter the manifest');
+    assert.equal(snapFiles.linked.status, 'link', 'the link is a link entry, not its target');
+    assert.equal(typeof snapFiles.linked.sha256, 'string',
+      'the link entry carries a digest of its own target string');
     fs.writeFileSync(path.join(dir, 'b.txt'), 'b\n');
     const collected = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
     const listed = [...collected.untracked, ...collected.unstaged, ...collected.deleted,
       ...collected.out_of_scope.map(entry => entry.file), ...collected.unscoped.map(entry => entry.file)];
     assert.ok(listed.includes('b.txt'), 'a real addition must still be detected');
-    assert.ok(!listed.some(file => file === 'linked' || file.startsWith('linked/')),
+    assert.ok(!listed.some(file => file.startsWith('linked/')),
       'files reachable only through the link must stay out of the collect manifest');
+    assert.equal(collected.integrity.status, 'incomplete',
+      'a link is compared only by its own target, so integrity must say so');
+    assert.ok(collected.integrity.limits.some(limit => limit.file === 'linked' && limit.kind === 'link'),
+      'the link must be recorded as a limit');
+    const material = fs.readFileSync(out, 'utf8');
+    assert.ok(!material.includes('secret'), 'the target body must never reach the material');
   } finally {
     // Remove the link itself only: rmSync(recursive) walks through Windows junctions
     // and would delete the target directory's contents.
@@ -616,6 +652,60 @@ test('git-mode fingerprints never read content through a symlink or junction', t
       else fs.unlinkSync(link);
     } catch {}
     wipe(base);
+  }
+});
+
+test('a tracked file replaced by a link is compared as a link, not by target bytes', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir} = initRepo({'src/lf.txt': 'TRACKED_BODY\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-material.md');
+  const isWin = process.platform === 'win32';
+  const outside = path.join(workRoot(), path.basename(dir) + '-outside.txt');
+  const outsideDir = path.join(workRoot(), path.basename(dir) + '-outside-dir');
+  const token = 'secret-through-link';
+  const target = path.join(dir, 'src', 'lf.txt');
+  // The path is tracked and clean at snapshot time, so the baseline is a HEAD blob; the
+  // replacement must be compared as a link, never by hashing what the link points at.
+  runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+  fs.rmSync(target);
+  let mode = null;
+  try {
+    fs.writeFileSync(outside, token + '\n');
+    fs.symlinkSync(outside, target, 'file');
+    mode = 'file-link';
+  } catch {
+    // Windows without developer mode cannot create file symlinks; a junction to a directory
+    // is the equivalent reparse point Git for Windows enumerates as that very path.
+    try {
+      fs.mkdirSync(outsideDir);
+      fs.writeFileSync(path.join(outsideDir, 'secret.txt'), token + '\n');
+      fs.symlinkSync(outsideDir, target, 'junction');
+      mode = 'junction';
+    } catch {
+      mode = null;
+    }
+  }
+  if (!mode || (mode === 'junction' && !isWin)) {
+    wipe(dir, snap, out, outside, outsideDir);
+    t.skip('link creation unavailable on this platform: tracked-file link guard not exercised');
+    return;
+  }
+  try {
+    const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.equal(data.integrity.status, 'incomplete',
+      'a link is compared only by its own target, so integrity must say so');
+    const limit = data.integrity.limits.find(item =>
+      item.kind === 'link' && item.file.startsWith('src/lf.txt'));
+    assert.ok(limit, 'a link at a tracked path must show up as an integrity limit');
+    const body = fs.readFileSync(out, 'utf8');
+    assert.ok(!body.includes(token), 'material must never contain bytes read through a link');
+  } finally {
+    try {
+      if (isWin) fs.rmdirSync(target);
+      else fs.unlinkSync(target);
+    } catch {}
+    wipe(dir, snap, out, outside, outsideDir);
   }
 });
 
@@ -748,6 +838,201 @@ test('paths with spaces and brackets are attributed verbatim', t => {
   } finally { wipe(dir, snap, out); }
 });
 
+// ---- 第六轮全量审查修复（2.3.13）--------------------------------------------
+
+test('a clean tracked baseline is compared by Git content id, not by raw bytes', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, git, write} = initRepo({'src/lf.txt': 'line one\nline two\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-material.md');
+  try {
+    // core.autocrlf rewrites the checkout without changing the content Git stores: the
+    // task-start baseline is the HEAD blob, so a CRLF checkout is not a task change (comparing
+    // raw worktree bytes made it a phantom one).
+    git('config', 'core.autocrlf', 'true');
+    fs.rmSync(path.join(dir, 'src', 'lf.txt'));
+    git('checkout', '--', 'src/lf.txt');
+    assert.ok(fs.readFileSync(path.join(dir, 'src', 'lf.txt'), 'utf8').includes('\r\n'),
+      'the checkout must produce a CRLF worktree for this test to mean anything');
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    const still = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap, '--scope', 'src/**']);
+    assert.deepEqual(still.unstaged, [], 'an untouched CRLF checkout is not a change');
+    assert.deepEqual(still.task, []);
+    assert.equal(still.integrity.status, 'complete');
+    assert.ok(!materialOf(out).includes('line two'), 'no phantom diff may reach the material');
+    // A real edit is still detected and attributed to the task.
+    write('src/lf.txt', 'line one\r\nline three\r\n');
+    const changed = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap, '--scope', 'src/**']);
+    assert.deepEqual(changed.unstaged, ['src/lf.txt']);
+    assert.deepEqual(changed.task.map(entry => entry.file), ['src/lf.txt']);
+    assert.ok(materialOf(out).includes('line three'), 'the real edit must reach the material');
+  } finally { wipe(dir, snap, out); }
+});
+
+test('a link present at snapshot time is compared by its own target only', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const base = fs.mkdtempSync(path.join(workRoot(), 'gitsnap-link-'));
+  const dir = path.join(base, 'repo');
+  const isWin = process.platform === 'win32';
+  const link = path.join(dir, isWin ? 'linked' : 'linked.txt');
+  const snap = path.join(base, 'snap.json');
+  const out = path.join(base, 'material.md');
+  const token = 'outside-body-must-not-leak';
+  const git = (...args) => {
+    const result = spawnSync('git', args, {cwd: dir, encoding: 'utf8'});
+    assert.equal(result.status, 0, 'git ' + args.join(' ') + ': ' + result.stderr);
+    return result;
+  };
+  fs.mkdirSync(dir, {recursive: true});
+  git('init', '-q'); git('config', 'user.email', 'eval@example.invalid');
+  git('config', 'user.name', 'eval'); git('config', 'core.autocrlf', 'false');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  git('add', '-A'); git('commit', '-q', '-m', 'base');
+  const first = path.join(base, 'first');
+  const second = path.join(base, 'second');
+  fs.mkdirSync(first); fs.mkdirSync(second);
+  fs.writeFileSync(path.join(first, 'secret.txt'), token + '\n');
+  fs.writeFileSync(path.join(second, 'secret.txt'), token + '\n');
+  const makeLink = target => {
+    try {
+      if (isWin) fs.symlinkSync(target, link, 'junction');
+      else fs.symlinkSync(isWin ? target : path.join(target, 'secret.txt'), link);
+      return true;
+    } catch { return false; }
+  };
+  if (!makeLink(first)) { t.skip('link creation unavailable on this platform'); wipe(base); return; }
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap]);
+    // Retarget the junction: the recorded identity must differ even though the bytes behind
+    // it are byte-for-byte identical.
+    if (isWin) fs.rmdirSync(link); else fs.unlinkSync(link);
+    assert.ok(makeLink(second), 'the retargeted link could not be created');
+    const collected = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    // Git enumerates through the junction as a directory, so the recorded path is the file
+    // inside it; its digest comes from the junction component, never from its bytes.
+    const file = isWin ? 'linked/secret.txt' : 'linked.txt';
+    assert.ok([...collected.untracked, ...collected.unstaged].includes(file),
+      'a retargeted link is a change');
+    const snapshotState = JSON.parse(fs.readFileSync(snap, 'utf8'));
+    const baseline = (snapshotState.untracked ?? {})[file];
+    const recorded = collected.integrity.limits.find(limit => limit.file === file);
+    assert.ok(recorded?.digest && baseline.sha256 && recorded.digest !== baseline.sha256,
+      'the retarget must change the recorded identity');
+    const entry = collected.integrity.limits.find(limit => limit.file === file);
+    assert.ok(entry, 'a link change must be recorded as an integrity limit');
+    assert.equal(entry.kind, 'link');
+    assert.ok(!materialOf(out).includes(token), 'no target body may reach the material');
+  } finally {
+    try { if (isWin) fs.rmdirSync(link); else fs.unlinkSync(link); } catch {}
+    wipe(base);
+  }
+});
+
+test('deleting a link recorded at snapshot time shows its identity, not "（无）"', t => {
+  const base = fs.mkdtempSync(path.join(workRoot(), 'nogit-link-del-'));
+  const dir = path.join(base, 'repo');
+  const target = path.join(base, 'target');
+  const link = path.join(dir, 'linked');
+  const snap = path.join(base, 'snap.json');
+  const out = path.join(base, 'material.md');
+  fs.mkdirSync(dir, {recursive: true});
+  fs.mkdirSync(target, {recursive: true});
+  fs.writeFileSync(path.join(dir, '.git'), 'garbage\n');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  fs.writeFileSync(path.join(target, 'secret.txt'), 'secret\n');
+  try {
+    if (process.platform === 'win32') fs.symlinkSync(target, link, 'junction');
+    else fs.symlinkSync(path.join(target, 'secret.txt'), link);
+  } catch { t.skip('link creation unavailable on this platform'); wipe(base); return; }
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', '**']);
+    if (process.platform === 'win32') fs.rmdirSync(link); else fs.unlinkSync(link);
+    const collected = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap, '--scope', '**']);
+    assert.deepEqual(collected.deleted, ['linked']);
+    const entry = collected.integrity.limits.find(limit => limit.file === 'linked' && limit.layer === 'worktree');
+    assert.ok(entry, 'the deleted link needs an integrity entry');
+    assert.equal(entry.kind, 'link');
+    assert.ok(entry.reason.includes('target not read'), entry.reason);
+    const material = materialOf(out);
+    assert.ok(material.includes('基线记录为 link'), 'the deletion must show what was compared');
+    assert.ok(!material.includes('基线内容不可完整展示'), 'a recorded link is not an unknown baseline');
+    assert.ok(!material.includes('secret'), 'the link target body must never be read');
+  } finally { wipe(base); }
+});
+
+test('snapshot refuses --base and --snapshot instead of ignoring them', () => {
+  const dir = fs.mkdtempSync(path.join(workRoot(), 'snap-args-'));
+  const out = path.join(workRoot(), path.basename(dir) + '-snap.json');
+  try {
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+    const withBase = runTool(['snapshot', '--repo', dir, '--out', out, '--base', 'HEAD']);
+    assert.equal(withBase.status, 2);
+    assert.ok(JSON.parse(withBase.stdout).errors.some(message => message.includes('--base')));
+    const withSnapshot = runTool(['snapshot', '--repo', dir, '--out', out, '--snapshot', out]);
+    assert.equal(withSnapshot.status, 2);
+    assert.ok(JSON.parse(withSnapshot.stdout).errors.some(message => message.includes('--snapshot')));
+    assert.equal(fs.existsSync(out), false, 'a refused snapshot must not write a baseline');
+  } finally { wipe(dir, out); }
+});
+
+test('the output guard refuses a hard link pointing at a repository file', t => {
+  const dir = fs.mkdtempSync(path.join(workRoot(), 'hardlink-out-'));
+  const root = path.join(dir, 'repo');
+  fs.mkdirSync(root, {recursive: true});
+  const victim = path.join(root, 'victim.txt');
+  fs.writeFileSync(victim, 'original\n');
+  const out = path.join(workRoot(), path.basename(dir) + '-material.md');
+  try {
+    try { fs.linkSync(victim, out); } catch { t.skip('hard links unavailable on this filesystem'); return; }
+    const result = runTool(['collect', '--repo', root, '--out', out]);
+    assert.equal(result.status, 2, result.stdout);
+    assert.ok(JSON.parse(result.stdout).errors.some(message => message.includes('hard link')));
+    assert.equal(fs.readFileSync(victim, 'utf8'), 'original\n', 'the linked file must stay untouched');
+  } finally { wipe(dir, out); }
+});
+
+test('the CLI still runs when its path is reached through a junction', t => {
+  const base = fs.mkdtempSync(path.join(workRoot(), 'cli-link-'));
+  const alias = path.join(base, 'alias');
+  const repo = path.join(base, 'repo');
+  const out = path.join(base, 'snap.json');
+  try {
+    try {
+      if (process.platform === 'win32') fs.symlinkSync(path.dirname(reviewScript), alias, 'junction');
+      else fs.symlinkSync(path.dirname(reviewScript), alias);
+    } catch { t.skip('link creation unavailable on this platform'); return; }
+    fs.mkdirSync(repo, {recursive: true});
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+    const result = spawnSync(process.execPath, [path.join(alias, 'review-material.mjs'),
+      'snapshot', '--repo', repo, '--out', out], {encoding: 'utf8'});
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).ok, true, 'the CLI must not exit silently through a link');
+    assert.equal(fs.existsSync(out), true);
+  } finally { wipe(base); }
+});
+
+test('the empty baseline tree follows the repository object format', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const dir = fs.mkdtempSync(path.join(workRoot(), 'empty-tree-'));
+  try {
+    const git = (...args) => spawnSync('git', args, {cwd: dir, encoding: 'utf8', input: ''});
+    assert.equal(git('init', '-q').status, 0);
+    const sha1Tree = git('hash-object', '-t', 'tree', '--stdin').stdout.trim();
+    assert.equal(review.emptyTree(dir), sha1Tree);
+    // A SHA-256 repository has a different empty-tree id; the hard-coded SHA-1 value used to
+    // make every empty-baseline diff fail there.
+    const sha256 = path.join(dir, 'sha256');
+    fs.mkdirSync(sha256);
+    if (git('init', '-q', '--object-format=sha256').status !== 0) return;
+    const init = spawnSync('git', ['init', '-q', '--object-format=sha256'], {cwd: sha256, encoding: 'utf8'});
+    if (init.status !== 0) return;
+    const expected = spawnSync('git', ['hash-object', '-t', 'tree', '--stdin'],
+      {cwd: sha256, encoding: 'utf8', input: ''}).stdout.trim();
+    assert.equal(review.emptyTree(sha256), expected);
+    assert.notEqual(expected, sha1Tree);
+  } finally { wipe(dir); }
+});
+
 test('staging task content while restoring the user worktree still shows the index change', t => {
   if (!hasGit) { t.skip('git unavailable'); return; }
   const {dir, git, write} = initRepo({'src/a.js': 'base\n'});
@@ -766,7 +1051,8 @@ test('staging task content while restoring the user worktree still shows the ind
     assert.deepEqual(layers(data.pre_existing, 'src/a.js'), []);
     const material = materialOf(out);
     assert.ok(material.includes('TASK_STAGED'), 'material must contain the staged task content');
-    assert.ok(material.includes('mixed') || material.includes('须协调者核对'));
+    assert.ok(material.includes('src/a.js：任务开始时已有改动'),
+      'the mixed attribution must reach the material, not just the summary');
   } finally { wipe(dir, snap, out); }
 });
 
@@ -1061,7 +1347,10 @@ test('a repository without commits still reports content and fingerprints', t =>
     const material = materialOf(out);
     assert.ok(material.includes('SECOND_FILE'));
     assert.ok(material.includes('MODIFIED_AFTER_SNAPSHOT'));
-    assert.ok(material.includes('mixed') || material.includes('须协调者核对'));
+    assert.ok(material.includes('src/a.js：任务开始时已有改动'),
+      'a task-start untracked file the task edited is mixed and must be flagged per file');
+    assert.ok(!material.includes('src/b.js：任务开始时已有改动'),
+      'a file that did not exist at task start is task content, never mixed');
   } finally { wipe(dir, snap, out); }
 });
 
@@ -1437,7 +1726,7 @@ test('integrity marks binary content and keeps the header and summary in agreeme
   } finally { wipe(dir, snap, out); }
 });
 
-test('truncated and oversized content are reported without unbounded buffering', t => {
+test('truncated and oversized content are reported as integrity limits', t => {
   if (!hasGit) { t.skip('git unavailable'); return; }
   const {dir, write} = initRepo({'src/a.js': 'small\n'});
   const snap = path.join(workRoot(), path.basename(dir) + '-snap.json');

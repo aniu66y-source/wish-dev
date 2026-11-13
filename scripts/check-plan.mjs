@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 // Structural gate only: never executes the plan's commands or claims their success.
 export function validatePlan(plan) {
@@ -192,16 +192,51 @@ function headerLine(value,raw){
   return value===''||LEDGER_FIELDS.some(([,pattern])=>pattern.test(value))||TABLE_SEPARATOR.test(raw.trim());
 }
 
+// Hidden regions are not the ledger: an HTML comment renders nowhere, and a fenced code
+// sample renders as code, so neither can satisfy the write-ahead gate. Line indexes are
+// preserved so the "within the first 40 lines" window still means the visible file.
+function maskHidden(lines){
+  const visible=[];
+  let fence=null;
+  let inComment=false;
+  for(const line of lines){
+    if(inComment){
+      const close=line.indexOf('-->');
+      if(close<0){visible.push('');continue;}
+      inComment=false;
+      visible.push(line.slice(close+3));
+      continue;
+    }
+    const marker=line.trim().match(/^(`{3,}|~{3,})/);
+    if(fence){
+      if(marker&&marker[1][0]===fence[0]&&marker[1].length>=fence.length)fence=null;
+      visible.push('');
+      continue;
+    }
+    if(marker){fence=marker[1];visible.push('');continue;}
+    const open=line.indexOf('<!--');
+    if(open<0){visible.push(line);continue;}
+    const close=line.indexOf('-->',open+4);
+    if(close<0){inComment=true;visible.push(line.slice(0,open));continue;}
+    visible.push(line.slice(0,open)+line.slice(close+3));
+  }
+  return visible;
+}
+
 function ledgerStatus(file){
   if(!fs.existsSync(file))return {ok:false,errors:['ledger missing: progress.md must sit next to prd.json before the first package fires (not_started)']};
   let text;
   try{text=fs.readFileSync(file,'utf8').replace(/^\uFEFF/,'');}
   catch{return {ok:false,errors:['ledger unreadable: '+file]};}
-  const lines=text.split(/\r?\n/);
+  const lines=maskHidden(text.split(/\r?\n/));
   // The header is one contiguous block near the top: blank lines and table separators
   // may sit between fields, but a prose line ends the block. Fields scattered through
-  // the log do not satisfy it.
-  const start=lines.findIndex(line=>LEDGER_FIELDS.some(([,pattern])=>pattern.test(normalizeLedgerLine(line))));
+  // the log do not satisfy it, and the block must start at the wish id so a stray
+  // field line above it cannot pull the window onto itself.
+  const wishId=LEDGER_FIELDS[0][1];
+  const firstWish=lines.findIndex(line=>wishId.test(normalizeLedgerLine(line)));
+  const firstAny=firstWish<0?lines.findIndex(line=>LEDGER_FIELDS.some(([,pattern])=>pattern.test(normalizeLedgerLine(line)))):-1;
+  const start=firstWish>=0?firstWish:firstAny;
   const found=new Set();
   if(start>=0&&start<LEDGER_HEADER_START){
     const end=Math.min(start+LEDGER_HEADER_SPAN,lines.length);
@@ -246,7 +281,23 @@ function runCli(argv){
   return {plan,errors,ledger:ledger.ok,ledger_path:ledgerPath};
 }
 
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+// Entry detection through the real path: a junction or symlinked copy would otherwise
+// compare two different spellings, exit 0, and gate nothing without saying so.
+function realPath(file){
+  try{return fs.realpathSync.native(file);}
+  catch{return null;}
+}
+
+function samePath(left,right){
+  if(!left||!right)return false;
+  return process.platform==='win32'?left.toLowerCase()===right.toLowerCase():left===right;
+}
+
+function invokedDirectly(){
+  return samePath(realPath(process.argv[1]||''),realPath(fileURLToPath(import.meta.url)));
+}
+
+if(invokedDirectly()){
   const fail=message=>console.log(JSON.stringify({ok:false,errors:[message],ledger:false,ledger_path:null,next_actions:[]},null,2));
   try{
     const result=runCli(process.argv);

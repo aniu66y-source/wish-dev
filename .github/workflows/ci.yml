@@ -15,15 +15,19 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        # Cover the declared floor and a newer line for both runtimes: README promises
+        # Node 18+ and Python 3.10+, so testing only 3.11/20 would leave the floor unproven.
+        python: ["3.10", "3.11"]
+        node: ["18", "20"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node }}
       - name: Structure and quality gate
         run: python -B tools/package_skill.py --check
       - name: Plan gate tests

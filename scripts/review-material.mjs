@@ -19,14 +19,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 const TOOL = 'review-material';
 const FORMAT = 2;
 const CONTENT_LIMIT = 200 * 1024;
 const BLOB_LIMIT = 20 * 1024 * 1024;
 const CHUNK = 1024 * 1024;
-const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+// Fallback only: the real empty tree is derived from the repository's hash algorithm
+// (SHA-256 repositories have a different id), so an empty baseline still diffs there.
+const EMPTY_TREE_SHA1 = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -52,8 +54,12 @@ function hashFile(file) {
   return {sha256: hash.digest('hex'), size};
 }
 
-function run(cwd, command, args, encoding = 'utf8') {
-  const result = spawnSync(command, args, {cwd, encoding, maxBuffer: 256 * 1024 * 1024});
+function run(cwd, command, args, encoding = 'utf8', input = undefined) {
+  const result = spawnSync(command, args, {cwd, encoding, maxBuffer: 256 * 1024 * 1024, input});
+  // spawnSync reports "could not start" (ENOENT, EACCES, too long argv) through error and
+  // leaves status null; silently returning that produced a bare "failed: null" far away
+  // from the cause.
+  if (result.error) throw new Error('failed to run ' + command + ': ' + result.error.message);
   return {
     status: result.status,
     stdout: result.stdout ?? (encoding ? '' : Buffer.alloc(0)),
@@ -64,18 +70,29 @@ function run(cwd, command, args, encoding = 'utf8') {
 // --literal-pathspecs keeps a file name containing `*` or `?` from being read as a
 // pathspec pattern; core.quotePath=false keeps non-ASCII paths readable without touching
 // the user's Git configuration. Pass encoding=null for raw Buffer output.
-function git(cwd, args, encoding = 'utf8') {
-  return run(cwd, 'git', ['-c', 'core.quotePath=false', '--literal-pathspecs', ...args], encoding);
+function git(cwd, args, encoding = 'utf8', input = undefined) {
+  return run(cwd, 'git', ['-c', 'core.quotePath=false', '--literal-pathspecs', ...args], encoding, input);
 }
 
 function gitValue(cwd, args) {
-  const result = git(cwd, args);
+  let result;
+  try {
+    result = git(cwd, args);
+  } catch {
+    return null;
+  }
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
+// Missing Git is a supported mode, not an error: a spawn failure here means "no Git", the
+// caller falls back to the file-manifest path.
 function isRepo(repo) {
-  const probe = git(repo, ['rev-parse', '--is-inside-work-tree']);
-  return probe.status === 0 && probe.stdout.trim() === 'true';
+  try {
+    const probe = git(repo, ['rev-parse', '--is-inside-work-tree']);
+    return probe.status === 0 && probe.stdout.trim() === 'true';
+  } catch {
+    return false;
+  }
 }
 
 function head(repo) {
@@ -148,23 +165,36 @@ function samePath(left, right) {
 }
 
 // Git for Windows enumerates junctions as ordinary directories, so an entry path can
-// leave the repository through a link component before the leaf. lstat every ancestor
-// below the root before trusting a readable-looking leaf.
-function hasLinkAncestor(root, rel) {
+// leave the repository through a link component before the leaf. Return the first link
+// component (or null) instead of a boolean: its own target is what identifies the link.
+function linkComponent(root, rel) {
   let current = root;
   for (const part of String(rel).split('/')) {
     current = path.join(current, part);
     try {
-      if (fs.lstatSync(current).isSymbolicLink()) return true;
+      if (fs.lstatSync(current).isSymbolicLink()) return current;
     } catch {
-      return false;
+      return null;
     }
   }
-  return false;
+  return null;
+}
+
+// A link is fingerprinted by its own target string: enough to notice that it changed,
+// without reading a single byte of whatever the target contains.
+function linkFingerprint(file) {
+  let digest = null;
+  try {
+    digest = sha256(fs.readlinkSync(file));
+  } catch {
+    digest = null;
+  }
+  return {status: 'link', sha256: digest, size: null};
 }
 
 function fingerprintPath(root, rel) {
-  if (hasLinkAncestor(root, rel)) return {status: 'link', sha256: null, size: null};
+  const link = linkComponent(root, rel);
+  if (link) return linkFingerprint(link);
   return fingerprintFile(path.join(root, rel));
 }
 
@@ -177,7 +207,7 @@ function fingerprintFile(file) {
   } catch (error) {
     return {status: error?.code === 'ENOENT' ? 'missing' : 'unreadable', sha256: null, size: null};
   }
-  if (stat.isSymbolicLink()) return {status: 'link', sha256: null, size: null};
+  if (stat.isSymbolicLink()) return linkFingerprint(file);
   if (!stat.isFile()) return {status: 'unreadable', sha256: null, size: stat.size};
   try {
     const {sha256: digest, size} = hashFile(file);
@@ -235,6 +265,14 @@ function blobFingerprint(repo, sha) {
     : {status: 'unreadable', sha256: null, size, blob: sha};
   blobCache.set(sha, value);
   return value;
+}
+
+// Git's content id for a worktree file: clean filters (core.autocrlf, .gitattributes,
+// eol conversions) are applied, so a checkout that only spells the same content with CRLF
+// hashes equal to the HEAD blob instead of looking like a task change.
+function worktreeContentId(repo, file) {
+  const result = git(repo, ['hash-object', '--', file]);
+  return result.status === 0 ? result.stdout.trim() || null : null;
 }
 
 // Content view is the single place that decides "can this be shown completely?".
@@ -303,8 +341,11 @@ function blobView(repo, sha) {
 }
 
 function sameFingerprint(left, right) {
-  return Boolean(left && right) && left.status === 'ok' && right.status === 'ok'
-    && left.sha256 !== null && left.sha256 === right.sha256;
+  if (!left || !right || left.sha256 === null || left.sha256 !== right.sha256) return false;
+  // Two links are the same when their recorded target strings match; two readable files
+  // when their content digests match. Nothing else is proven equal.
+  if (left.status === 'link' || right.status === 'link') return left.status === right.status;
+  return left.status === 'ok' && right.status === 'ok';
 }
 
 // "Both absent" is a real state comparison, not a null coincidence; everything else needs
@@ -405,7 +446,11 @@ function indexBlobs(repo) {
 
 function treeBlobs(repo, revision) {
   const result = git(repo, ['ls-tree', '-r', '-z', revision]);
-  if (result.status !== 0) return new Map();
+  // A failed listing used to look like "this revision has no files", which quietly turned
+  // every committed file into an addition; fail loudly and let the caller record a limit.
+  if (result.status !== 0) {
+    throw new Error('git ls-tree failed for ' + revision + ': ' + (result.stderr.trim() || result.status));
+  }
   const blobs = new Map();
   for (const record of result.stdout.split('\0')) {
     if (!record) continue;
@@ -427,12 +472,15 @@ function manifest(repo, {skipGit}) {
   const walk = directory => {
     for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
       if (skipGit && entry.name === '.git') continue;
-      // Symlinks (to files or directories) and Windows junctions are reparse points,
-      // not regular entries: the documented manifest must not follow them out of the repository
-      // (or into a cycle), so every reparse point is skipped regardless of how the
-      // platform classifies its target.
-      if (entry.isSymbolicLink()) continue;
+      // Symlinks (to files or directories) and Windows junctions are reparse points, not
+      // regular entries. They are listed with their own target digest (never followed,
+      // never recursed into), so a link that appears, disappears or retargets is visible
+      // as a change instead of silently vanishing from the comparison.
       const full = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        files[toPosix(path.relative(repo, full))] = linkFingerprint(full);
+        continue;
+      }
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) files[toPosix(path.relative(repo, full))] = fingerprintFile(full);
     }
@@ -461,6 +509,17 @@ function assertSafeOutput(out, repo, snapshotPath) {
   if (isInside(target, repoReal) || isInside(path.resolve(out), path.resolve(repo))) {
     throw new Error('--out must stay outside the repository (use the runtime root): ' + path.resolve(out));
   }
+  // A hard link is the same inode under another name, so the resolved path looks innocent
+  // while the write would land inside the repository (or on the baseline).
+  try {
+    const stat = fs.lstatSync(out);
+    if (stat.isFile() && stat.nlink > 1) {
+      throw new Error('--out is a hard link (nlink ' + stat.nlink + '); refusing to write through it: '
+        + path.resolve(out));
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
 }
 
 function fingerprintSummary(fingerprint) {
@@ -482,6 +541,10 @@ function snapshot(repo, options) {
   const gitMode = isRepo(requested);
   const root = canonicalRepo(requested, gitMode);
   assertSafeOutput(options.out, root, null);
+  // Accepting these silently is worse than refusing: the flags cannot do anything here, and
+  // a user who passed --base believes the snapshot records that base.
+  if (options.base) throw new Error('snapshot does not accept --base: the baseline commit is read from HEAD');
+  if (options.snapshot) throw new Error('snapshot does not accept --snapshot: it creates the baseline');
   // A re-snapshot over the same file would silently replace the recorded baseline with
   // the current state — work done between the two snapshots would then be attributed
   // to "pre-existing". Refuse instead: use a new --out path or delete the old baseline.
@@ -599,14 +662,25 @@ function scopeOf(file, scope) {
 
 // A snapshot with `base: null` recorded "no commit existed"; that is different from "no
 // snapshot". Compare against the empty tree so the first commit is fully visible.
-function resolveBase(options, state, currentHead) {
+function resolveBase(root, options, state, currentHead) {
   if (options.base) return {kind: 'commit', sha: options.base};
   if (state) {
     if (state.base) return {kind: 'commit', sha: state.base};
-    return {kind: 'empty', sha: EMPTY_TREE};
+    return {kind: 'empty', sha: emptyTree(root)};
   }
   if (currentHead) return {kind: 'commit', sha: currentHead};
   return {kind: 'none', sha: null};
+}
+
+// The empty tree id depends on the repository's object format (SHA-1 vs SHA-256). Ask Git
+// for the id of an empty tree instead of hard-coding a SHA-1 value.
+function emptyTree(repo) {
+  try {
+    const result = git(repo, ['hash-object', '-t', 'tree', '--stdin'], 'utf8', '');
+    const sha = result.status === 0 ? result.stdout.trim() : '';
+    if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(sha)) return sha;
+  } catch {}
+  return EMPTY_TREE_SHA1;
 }
 
 function hasDiff(repo, args, file) {
@@ -616,11 +690,20 @@ function hasDiff(repo, args, file) {
   throw new Error('git diff --quiet failed: ' + (result.stderr.trim() || result.status));
 }
 
+// Diff in bounded batches: a large change set used to be handed to Git in one argv, which
+// on Windows dies at the command-line length limit (ENAMETOOLONG) before any diff exists.
+const DIFF_BATCH = 200;
+
 function diffFor(repo, args, files) {
   if (!files.length) return '';
-  const result = git(repo, ['diff', '--no-color', ...args, '--', ...files]);
-  if (result.status !== 0) throw new Error('git diff failed: ' + (result.stderr.trim() || result.status));
-  return result.stdout.trim() ? fenced(result.stdout, 'diff') : '';
+  const parts = [];
+  for (let index = 0; index < files.length; index += DIFF_BATCH) {
+    const batch = files.slice(index, index + DIFF_BATCH);
+    const result = git(repo, ['diff', '--no-color', ...args, '--', ...batch]);
+    if (result.status !== 0) throw new Error('git diff failed: ' + (result.stderr.trim() || result.status));
+    if (result.stdout.trim()) parts.push(result.stdout.trim());
+  }
+  return parts.length ? fenced(parts.join('\n') + '\n', 'diff') : '';
 }
 
 // Markdown rendering of the collected records: pure presentation, no collection
@@ -664,6 +747,12 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
       return {kind: 'digest-only', complete: false, fingerprint: baseline.worktree,
         ref: file, text: null, bytes: baseline.worktree.size, truncated: false};
     }
+    // A baseline that was itself a link (or unreadable) still has a recorded identity; the
+    // deletion must show what was compared against instead of falling through to "（无）".
+    if (baseline.worktree && baseline.worktree.status !== 'ok') {
+      return {kind: baseline.worktree.status, complete: false, fingerprint: baseline.worktree,
+        ref: file, text: null, bytes: baseline.worktree.size, truncated: false};
+    }
     return null;
   }
 
@@ -690,6 +779,7 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
   };
   // addChange already drops pre-existing worktree/untracked records, so that rule has a
   // single decision point; rendering only applies the scope filter.
+  const renameSuffix = entry => (entry.oldPath ? `，重命名自 ${entry.oldPath}` : '');
   const renderable = entry => inScope(entry);
   const byLayer = layer => entry => entry.layer === layer && renderable(entry);
   const baselineFingerprint = entry => {
@@ -698,6 +788,11 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
     // displayed baseline digest must be the same value (falling back to the layer blob
     // only when no worktree digest exists, e.g. a file that was absent).
     if (baseline.worktree && baseline.worktree.status === 'ok') return baseline.worktree;
+    // A clean tracked file's task-start content is the HEAD blob (Git content id, not raw
+    // bytes), so that blob is the baseline digest to display.
+    if (baseline.worktree && baseline.worktree.status === 'clean' && baseline.head) {
+      return blobFingerprint(root, baseline.head);
+    }
     if (entry.layer === 'index') return baseline.index ? blobFingerprint(root, baseline.index) : null;
     if (entry.layer === 'committed') return baseline.head ? blobFingerprint(root, baseline.head) : null;
     return baseline.worktree ?? null;
@@ -734,7 +829,12 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
     }
     const files = [...new Set(entries.map(entry => entry.file))];
     const diff = diffFor(root, args, files);
-    for (const entry of entries) if (entry.note) lines.push(renderNote(entry));
+    for (const entry of entries) {
+      // The old path is part of the change: without it a rename reads as a deletion plus an
+      // unrelated addition.
+      if (entry.oldPath) lines.push(`> ${entry.file}：重命名自 ${entry.oldPath}（旧路径的删除见第 5 节）。`);
+      if (entry.note) lines.push(renderNote(entry));
+    }
     if (diff) lines.push(diff, '');
     const uncovered = entries.filter(entry => !hasDiff(root, args, entry.file));
     if (uncovered.length) supplement(uncovered);
@@ -832,6 +932,13 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
       limits.push({file: entry.file, layer: entry.layer, kind: 'digest-only',
         reason: 'baseline body not stored', bytes: before.bytes,
         ref: before.ref, digest: before.fingerprint?.sha256 ?? null});
+    } else if (before && (before.kind === 'link' || before.kind === 'unreadable')) {
+      lines.push(before.kind === 'link'
+        ? `- 基线记录为 link（未读取链接目标字节）；基线指纹为链接自身目标的摘要，引用：${before.ref}。`
+        : `- 基线不可读（unreadable）；基线指纹与大小见上，引用：${before.ref}。`);
+      limits.push({file: entry.file, layer: entry.layer, kind: before.kind,
+        reason: before.kind === 'link' ? 'baseline is a link (target not read)' : 'baseline unreadable',
+        bytes: before.bytes, ref: before.ref, digest: before.fingerprint?.sha256 ?? null});
     } else {
       lines.push(`- 基线内容不可完整展示（${before?.kind ?? 'unknown'}）；凭指纹与引用核对：${before?.ref ?? '（无）'}。`);
       limits.push({file: entry.file, layer: entry.layer, kind: before?.kind ?? 'missing',
@@ -855,9 +962,9 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
       ? '（无）'
       : `（未声明或空范围内无法按范围归属任务前改动；第 7 节列有 ${outsidePre} 项范围外/未声明范围记录）`, '');
   }
-  for (const entry of pre) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}）：${entry.layer === 'baseline' ? '任务开始时已改动，本次未变化' : '内容一致或仅位置变化'}；不计入本任务实现内容。`);
-  for (const entry of mixed) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}）：${entry.note ?? '内容混合'}；须协调者核对。`);
-  for (const entry of unknown) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}）：${entry.note ?? '归属无法证实'}。`);
+  for (const entry of pre) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}${renameSuffix(entry)}）：${entry.layer === 'baseline' ? '任务开始时已改动，本次未变化' : '内容一致或仅位置变化'}；不计入本任务实现内容。`);
+  for (const entry of mixed) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}${renameSuffix(entry)}）：${entry.note ?? '内容混合'}；须协调者核对。`);
+  for (const entry of unknown) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}${renameSuffix(entry)}）：${entry.note ?? '归属无法证实'}。`);
   lines.push('');
 
   lines.push('## 7. 范围外 / 未声明范围的变化', '');
@@ -865,7 +972,7 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
   if (undetectable) lines.push('（无基线快照：无法判断任务期间是否发生任何变化，无从按范围归属，见第 8 节）', '');
   else if (!outside.length) lines.push('（无）', '');
   if (scope.mode !== 'declared') lines.push(`> 范围状态：${scope.mode === 'empty' ? '显式空范围（只读任务不写产品文件），下列变化未并入本任务交付' : '未声明写入范围，无法按范围归属；如需整仓请显式 --scope "**"'}。`, '');
-  for (const entry of outside) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}，${entry.scope === 'out' ? '范围外' : '未声明范围'}）`);
+  for (const entry of outside) lines.push(`- ${entry.file}（${layerLabel[entry.layer]}，${entry.scope === 'out' ? '范围外' : '未声明范围'}${renameSuffix(entry)}）`);
   lines.push('');
   // A declared scope leaves these as a bare list because the paths belong to other lines.
   // An empty or unspecified scope has no such owner: this is then the only material a
@@ -874,6 +981,7 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
     lines.push('### 未归属变化的内容（不计入本任务交付，供评审核对）', '');
     for (const entry of outside) {
       lines.push(`#### ${entry.file}（${layerLabel[entry.layer]}）`, '');
+      if (entry.oldPath) lines.push(`- 重命名自：${entry.oldPath}`);
       lines.push(`- 基线指纹：${fingerprintSummary(baselineFingerprint(entry))}`);
       if (entry.kind === 'deleted') {
         lines.push('- 当前状态：已删除', '');
@@ -920,7 +1028,7 @@ function collect(repo, options) {
   assertSafeOutput(options.out, root, options.snapshot);
   const scope = resolveScope(options, state);
   const currentHead = gitMode ? head(root) : null;
-  const baseInfo = resolveBase(options, state, currentHead);
+  const baseInfo = resolveBase(root, options, state, currentHead);
   const notes = [];
   const limits = [];
   const changes = [];
@@ -992,7 +1100,22 @@ function collect(repo, options) {
   // task-start content digest used both for worktree change detection and for content
   // attribution, so an index that differs from the worktree at task start is not itself a
   // change.
-  const baseTree = state?.base ? treeBlobs(root, state.base) : new Map();
+  // A failed tree listing degrades attribution; it must be a recorded limit, not an empty
+  // tree that silently turns every committed file into an addition.
+  const safeTreeBlobs = revision => {
+    try {
+      return treeBlobs(root, revision);
+    } catch (error) {
+      notes.push('修订 ' + revision + ' 的目录树无法读取：' + error.message + '；该修订的提交层归属可能降级。');
+      limits.push({
+        file: '（' + revision + ' 目录树）', layer: 'committed', kind: 'unreadable',
+        reason: 'git ls-tree failed: ' + error.message,
+        bytes: null, ref: null, digest: null,
+      });
+      return new Map();
+    }
+  };
+  const baseTree = state?.base ? safeTreeBlobs(state.base) : new Map();
   const baselineCache = new Map();
   const baselineOf = file => {
     if (baselineCache.has(file)) return baselineCache.get(file);
@@ -1010,8 +1133,11 @@ function collect(repo, options) {
       value = {kind: 'dirty', head: entry.head, index: entry.index, worktree: entry.worktree};
     } else {
       const headBlob = state.base ? baseTree.get(file) ?? null : null;
+      // A tracked file that was clean at task start held exactly the HEAD blob content in
+      // Git's own normalization; recording that as a 'clean' baseline keeps raw worktree
+      // bytes (CRLF, filters) out of the comparison.
       value = headBlob
-        ? {kind: 'tracked', head: headBlob, index: headBlob, worktree: blobFingerprint(root, headBlob)}
+        ? {kind: 'tracked', head: headBlob, index: headBlob, worktree: {status: 'clean', sha256: headBlob, size: null}}
         : {kind: 'absent'};
     }
     baselineCache.set(file, value);
@@ -1028,13 +1154,22 @@ function collect(repo, options) {
     const before = baseline.worktree;
     if (change.kind === 'deleted') {
       if (!before || before.status === 'missing') return {attribution: 'pre-existing', note: '任务开始前已不存在'};
-      if (before.status === 'ok') return {attribution: 'mixed', note: '删除的内容并非本任务所写（任务开始时已存在改动）'};
+      // A clean tracked baseline holds the user's pre-existing committed content, so deleting
+      // it removes content this task did not write.
+      if (before.status === 'ok' || before.status === 'clean') {
+        return {attribution: 'mixed', note: '删除的内容并非本任务所写（任务开始时已存在改动）'};
+      }
       return {attribution: 'unknown', note: '基线摘要不可用（大文件或不可读）'};
     }
-    if (sameState(before, change.view.fingerprint)) {
+    // Compare in the same normalization the change detector used: a clean baseline is a Git
+    // content id, never raw bytes.
+    const comparable = before && before.status === 'clean'
+      ? (id => (id ? {status: 'ok', sha256: id, size: null} : {status: 'unreadable', sha256: null, size: null}))(worktreeContentId(root, change.file))
+      : before;
+    if (sameState(comparable, change.view.fingerprint)) {
       return {attribution: 'pre-existing', note: '内容与任务开始时一致，仅位置/状态变化'};
     }
-    if (!before || before.status !== 'ok' || change.view.fingerprint.status !== 'ok') {
+    if (!comparable || comparable.status !== 'ok' || change.view.fingerprint.status !== 'ok') {
       return {attribution: 'unknown', note: '缺少可比较的内容摘要（大文件或不可读）'};
     }
     return {attribution: 'mixed', note: '任务开始时已有改动，当前内容与任务开始时不同'};
@@ -1042,7 +1177,7 @@ function collect(repo, options) {
 
   if (gitMode) {
     const index = indexBlobs(root);
-    const treeNow = currentHead ? treeBlobs(root, currentHead) : new Map();
+    const treeNow = currentHead ? safeTreeBlobs(currentHead) : new Map();
     const status = statusEntries(root);
     const statusByFile = new Map(status.map(entry => [entry.file, entry]));
     const committed = currentHead && (baseInfo.kind === 'commit' || baseInfo.kind === 'empty')
@@ -1093,8 +1228,14 @@ function collect(repo, options) {
       const currentIndexSha = index.get(file) ?? null;
       const currentWt = fingerprintPath(root, file);
       const indexChanged = currentIndexSha !== (baseline.index ?? null);
-      const worktreeChanged = !sameState(baseline.worktree ?? {status: 'missing', sha256: null, size: null}, currentWt);
-      evaluated.set(file, {indexChanged, worktreeChanged});
+      // A clean tracked baseline is compared by Git content id; anything else (dirty or
+      // untracked baselines) stored raw worktree bytes and is compared byte for byte.
+      const cleanBaseline = baseline.worktree?.status === 'clean';
+      const contentId = cleanBaseline ? worktreeContentId(root, file) : null;
+      const worktreeChanged = cleanBaseline
+        ? currentWt.status !== 'ok' || contentId === null || contentId !== baseline.worktree.sha256
+        : !sameState(baseline.worktree ?? {status: 'missing', sha256: null, size: null}, currentWt);
+      evaluated.set(file, {indexChanged, worktreeChanged, cleanBaseline, contentId});
 
       // The status arrays keep mirroring what Git reports; records are created separately.
       if (entry) {
@@ -1132,8 +1273,12 @@ function collect(repo, options) {
       if (worktreeChanged) {
         // A worktree that only matches the recorded index or commit is already covered by
         // that layer; a worktree restored to a *pre-task* value is still a task change.
-        const explainedByIndex = sameFingerprint(currentWt, indexFingerprint);
-        const explainedByCommit = sameFingerprint(currentWt, committedFingerprint);
+        const explainedByIndex = cleanBaseline
+          ? Boolean(contentId && currentIndexSha && contentId === currentIndexSha)
+          : sameFingerprint(currentWt, indexFingerprint);
+        const explainedByCommit = cleanBaseline
+          ? Boolean(contentId && committedFingerprint?.sha256 && contentId === committedFingerprint.sha256)
+          : sameFingerprint(currentWt, committedFingerprint);
         if (!explainedByIndex && !explainedByCommit) {
           addChange({file, layer: 'worktree', kind: currentWt.status === 'missing' ? 'deleted' : 'modified', oldPath: entry?.from ?? null},
             worktreeView(root, file));
@@ -1169,6 +1314,17 @@ function collect(repo, options) {
     // (binary missing, broken repo) must not surface its internals as task additions.
     const current = manifest(root, {skipGit: true});
     const before = state?.files ?? null;
+    if (fs.existsSync(path.join(root, '.git'))) {
+      notes.push('仓库内存在 .git，但 Git 无法读取（未安装或仓库损坏）：本次按无 Git 模式采集，提交历史不参与比对。');
+    }
+    // Links are part of the manifest now, so their presence must show up in integrity: the
+    // comparison stops at the link's own target string and never reads the target.
+    for (const [file, fingerprint] of Object.entries(current)) {
+      if (fingerprint.status !== 'link' || scopeOf(file, scope) === 'out') continue;
+      if (limits.some(limit => limit.file === file && limit.layer === 'worktree')) continue;
+      limits.push({file, layer: 'worktree', kind: 'link', reason: 'link (target not read)',
+        bytes: null, ref: file, digest: fingerprint.sha256});
+    }
     if (!state) notes.push('未提供基线快照：无 Git 模式下没有可比较的基线，无法检测任务期间的变化，第 3–7 节的空态均为“无法判定”而非“无变化”。');
     if (before) {
       for (const [file, fingerprint] of Object.entries(current)) {
@@ -1219,6 +1375,7 @@ const USAGE = [
   '  node review-material.mjs snapshot --repo <dir> --out <file> [--scope <a,b>]',
   '  node review-material.mjs collect  --repo <dir> --out <file> [--base <sha>] [--snapshot <file>] [--scope <a,b>] [--label T-1-01]',
   '  --scope "" declares an explicit empty writable scope; omitting --scope inherits the snapshot scope, otherwise it is unspecified.',
+  '  snapshot reads its base from HEAD and accepts neither --base nor --snapshot.',
 ].join('\n');
 
 function parseArgs(argv) {
@@ -1242,7 +1399,17 @@ function parseArgs(argv) {
   return options;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Comparing the *real* paths keeps the CLI working when the script is reached through a
+// junction or symlink (a plain URL comparison silently exits 0 with no output there).
+function invokedDirectly() {
+  try {
+    return samePath(realPath(process.argv[1] ?? ''), realPath(fileURLToPath(import.meta.url)));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
   try {
     const options = parseArgs(process.argv.slice(2));
     const result = options.command === 'snapshot' ? snapshot(options.repo, options) : collect(options.repo, options);
@@ -1253,4 +1420,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
 }
 
-export {snapshot, collect, globToRegExp, parseArgs, resolveReal};
+export {snapshot, collect, globToRegExp, parseArgs, resolveReal, emptyTree, worktreeContentId};

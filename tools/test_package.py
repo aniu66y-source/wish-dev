@@ -120,10 +120,14 @@ class PublishBoundaryTest(unittest.TestCase):
             "scripts/run.mjs": "x",
             "assets/logo.png": "x",
             "references/__pycache__/cached.cpython-313.pyc": "x",
-            "scripts/.hidden": "x",
         }
         self.assertEqual(self.packaged(files),
                          ["SKILL.md", "assets/logo.png", "references/guide.md", "scripts/run.mjs"])
+
+    def test_dot_files_are_rejected_instead_of_silently_dropped(self):
+        with self.assertRaises(ValueError) as caught:
+            self.packaged({"SKILL.md": "x", "scripts/.hidden": "x"})
+        self.assertIn("scripts/.hidden", str(caught.exception))
 
 
 class FrontmatterSyntaxTest(unittest.TestCase):
@@ -216,6 +220,86 @@ class FrontmatterSyntaxTest(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             self.validated('---\nname: wish-dev\ndescription: y\nmetadata:\n  version: true\n---\n')
         self.assertIn('non-string YAML type', str(caught.exception))
+
+
+class TextResourceValidationTest(unittest.TestCase):
+    """Suffix case must not change which checks a resource receives."""
+
+    HEAD = ('---\nname: wish-dev\ndescription: 用于测试的前置元数据\n'
+            'license: "Proprietary"\ncompatibility: "host"\nmetadata:\n  version: "1.0.0"\n---\n')
+
+    def validate_with(self, files):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "SKILL.md").write_text(self.HEAD, encoding="utf-8", newline="\n")
+        for name, body in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return skill.validate([root / "SKILL.md"] + [root / name for name in files])
+
+    def test_uppercase_markdown_is_still_text_checked(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validate_with({"references/Guide.MD": b"# Guide\r\n"})
+        self.assertIn("CRLF", str(caught.exception))
+
+    def test_uppercase_python_is_still_parsed(self):
+        with self.assertRaises(SyntaxError):
+            self.validate_with({"scripts/bad.PY": b"def f(:\n"})
+
+    def test_svg_line_endings_are_checked(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validate_with({"assets/logo.svg": b"<svg>\r\n</svg>\r\n"})
+        self.assertIn("CRLF", str(caught.exception))
+
+    def test_example_and_scheme_links_are_not_packaged_references(self):
+        body = ("[mail](mailto:a@b.c)\n\n[up](#top)\n\n```\n[x](scripts/none.mjs)\n"
+                "[g](guide.md)\n```\n\n[guide](guide.md)\n")
+        result = self.validate_with({"references/notes.md": body.encode(),
+                                     "references/guide.md": b"# g\n"})
+        # The broken example is ignored; a fenced reference to a packaged file still counts.
+        self.assertEqual(result["internal_links_checked"], 2)
+
+    def test_missing_relative_link_is_still_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.validate_with({"references/notes.md": b"[gone](scripts/none.mjs)\n"})
+        self.assertIn("Missing packaged reference", str(caught.exception))
+
+
+class VersionDriftTest(unittest.TestCase):
+    """Every advertised current version is compared, not only the first line."""
+
+    def drift_for(self, readme_lines):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "SKILL.md").write_text('---\nname: wish-dev\ndescription: y\n'
+                                       'metadata:\n  version: "1.2.3"\n---\n',
+                                       encoding="utf-8", newline="\n")
+        (root / "CHANGELOG.md").write_text("# 变更\n\n## 1.2.3\n",
+                                           encoding="utf-8", newline="\n")
+        (root / "README.md").write_text("\n".join(readme_lines) + "\n",
+                                        encoding="utf-8", newline="\n")
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return skill.version_drift()
+
+    def test_matching_current_version_has_no_drift(self):
+        self.assertEqual(self.drift_for(["- 当前版本：**1.2.3**"]), [])
+
+    def test_a_second_stale_current_version_is_drift(self):
+        issues = self.drift_for(["- 当前版本：**1.2.3**",
+                                 "| 正式版 | 当前正式版为 **1.1.0** |"])
+        self.assertTrue(any("1.1.0" in issue for issue in issues), issues)
+
+    def test_a_readme_without_a_current_version_is_reported(self):
+        self.assertTrue(any("未写出" in issue
+                            for issue in self.drift_for(["# 项目"])))
 
 
 if __name__ == "__main__":
