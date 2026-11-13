@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import * as gate from '../scripts/check-plan.mjs';
 import * as review from '../scripts/review-material.mjs';
@@ -189,7 +189,9 @@ const ledgers={
   scattered:()=>['# progress','- wish-id: W-01','杂项说明：随便写','备注：进度还行','- acceptance: AC-01 保存后刷新可读取','- current-package: T-1-01','其他：略','- next-action: 派发 T-1-01','- blocker: 无'].join('\n')+'\n',
   commented:()=>['# progress','<!--',...fieldLines,'-->'].join('\n')+'\n',
   fenced:()=>['# progress','\`\`\`',...fieldLines,'\`\`\`'].join('\n')+'\n',
-  preface:()=>['# progress','- 下一步：等协调者补充（示例模板，不是账本表头）',ledgerHeader()].join('\n')
+  preface:()=>['# progress','- 下一步：等协调者补充（示例模板，不是账本表头）',ledgerHeader()].join('\n'),
+  reordered:()=>[fieldLines[1],fieldLines[0],...fieldLines.slice(2)].join('\n')+'\n',
+  reorderedRest:()=>[fieldLines[0],fieldLines[4],fieldLines[2],fieldLines[1],fieldLines[3]].join('\n')+'\n'
 };
 
 function cli(source, check, {ledger='full'}={}){
@@ -257,6 +259,25 @@ test('a stray field line above the wish-id line does not open the ledger block',
     assert.equal(data.ledger,true);
     assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
   },{ledger:'preface'});
+});
+test('ledger requires wish-id as the first field of its complete block',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(result.status,2);
+    assert.equal(data.ok,false);
+    assert.equal(data.ledger,false);
+    assert.ok(data.errors.some(e=>e.includes('acceptance')));
+    assert.deepEqual(data.next_actions,[]);
+  },{ledger:'reordered'});
+});
+test('ledger permits remaining fields in any order after wish-id',()=>{
+  cli(JSON.stringify(fixture()),result=>{
+    const data=JSON.parse(result.stdout);
+    assert.equal(result.status,0);
+    assert.equal(data.ok,true);
+    assert.equal(data.ledger,true);
+    assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
+  },{ledger:'reorderedRest'});
 });
 test('ledger missing one header field is rejected',()=>{
   cli(JSON.stringify(fixture()),result=>{
@@ -388,6 +409,69 @@ function makeRepo(){
   });
 }
 const runTool=args=>spawnSync(process.execPath,[reviewScript,...args],{encoding:'utf8'});
+
+test('collect exclusively creates output and preserves existing files and links',t=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-output-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'material.md');
+  fs.mkdirSync(repo);
+  try {
+    fs.writeFileSync(out,'original');
+    const args=['collect','--repo',repo,'--out',out];
+    assert.equal(runTool(args).status,2);
+    assert.equal(fs.readFileSync(out,'utf8'),'original');
+    fs.unlinkSync(out);
+    assert.equal(runTool(args).status,0);
+    assert.ok(fs.readFileSync(out,'utf8').length>0);
+    fs.unlinkSync(out);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('collect refuses live and dangling output symlinks',t=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-link-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'material.md');
+  fs.mkdirSync(repo);
+  const args=['collect','--repo',repo,'--out',out];
+  try {
+    for(const target of ['existing','missing']) {
+      const dest=path.join(root,target);
+      if(target==='existing') fs.writeFileSync(dest,'target');
+      try { fs.symlinkSync(dest,out,'file'); } catch { t.skip('file symlinks unavailable'); return; }
+      assert.equal(runTool(args).status,2);
+      assert.equal(fs.lstatSync(out).isSymbolicLink(),true);
+      if(target==='existing') assert.equal(fs.readFileSync(dest,'utf8'),'target');
+      else assert.equal(fs.existsSync(dest),false);
+      fs.unlinkSync(out);
+    }
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('collect refuses directory links at the output path',t=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-junction-'));
+  const repo=path.join(root,'repo'), target=path.join(root,'target'), out=path.join(root,'output');
+  fs.mkdirSync(repo); fs.mkdirSync(target);
+  try {
+    try { fs.symlinkSync(target,out,process.platform==='win32'?'junction':'dir'); }
+    catch { t.skip('directory links unavailable'); return; }
+    assert.equal(runTool(['collect','--repo',repo,'--out',out]).status,2);
+    assert.equal(fs.lstatSync(out).isSymbolicLink(),true);
+    assert.deepEqual(fs.readdirSync(target),[]);
+    if(process.platform==='win32') fs.rmdirSync(out); else fs.unlinkSync(out);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('competing collect processes cannot replace the winning output',async()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-race-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'material.md');
+  fs.mkdirSync(repo);
+  try {
+    const run=()=>new Promise((resolve,reject)=>{
+      const child=spawn(process.execPath,[reviewScript,'collect','--repo',repo,'--out',out],{stdio:'ignore'});
+      child.on('error',reject); child.on('exit',resolve);
+    });
+    assert.deepEqual((await Promise.all([run(),run()])).sort(),[0,2]);
+    assert.ok(fs.readFileSync(out,'utf8').length>0);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
 
 test('review material covers every layer of uncommitted work',t=>{
   if(!hasGit){t.skip('git unavailable');return;}
@@ -861,6 +945,7 @@ test('a clean tracked baseline is compared by Git content id, not by raw bytes',
     assert.equal(still.integrity.status, 'complete');
     assert.ok(!materialOf(out).includes('line two'), 'no phantom diff may reach the material');
     // A real edit is still detected and attributed to the task.
+    fs.unlinkSync(out);
     write('src/lf.txt', 'line one\r\nline three\r\n');
     const changed = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap, '--scope', 'src/**']);
     assert.deepEqual(changed.unstaged, ['src/lf.txt']);
@@ -1583,6 +1668,7 @@ test('a snapshot with no commit compares the first commit against the empty tree
     }
     assert.ok(material.includes('空树'));
 
+    fs.unlinkSync(out);
     write('src/a.js', 'STAGED_AFTER\n');
     git('add', 'src/a.js');
     write('src/later.js', 'LATER_UNTRACKED\n');
@@ -1717,6 +1803,7 @@ test('integrity marks binary content and keeps the header and summary in agreeme
     assert.ok(material.includes('完整性：incomplete'));
     assert.ok(/incomplete: src\/a\.bin/.test(material));
 
+    fs.unlinkSync(out);
     write('src/a.bin', 'BINARY2\x00BYTES');
     git('add', 'src/a.bin');
     write('src/a.bin', 'BINARY3\x00BYTES');
@@ -1743,6 +1830,7 @@ test('truncated and oversized content are reported as integrity limits', t => {
     const material = materialOf(out);
     assert.ok(material.includes('正文截断') || material.includes('content truncated'));
 
+    fs.unlinkSync(out);
     write('src/huge.bin', Buffer.alloc(21 * 1024 * 1024, 7));
     const second = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
     const huge = second.integrity.limits.find(item => item.file === 'src/huge.bin');

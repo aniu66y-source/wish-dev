@@ -3,6 +3,16 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
+## 2.3.14 — 2026-11-13
+
+未发布。2.3.13 审查的三项修复：
+
+- `collect` 使用原子独占创建输出，不覆盖已有文件或链接；补充既有文件、新文件、链接及并发竞争回归，并同步使用契约。
+- 账本契约明确 `wish-id` 为表头首字段，保持既有门禁实现；补充 CLI 乱序负例。
+- `SKILL.md` 明确已确认同根因失败 3 次才阻塞，与工作流、续做及计划契约一致。
+- **文档**：检查并润色核心、参考、评估与历史文档；统一修复预算阻塞时点的表述，保留现有契约和历史事实。
+- **行为评估未完成**：上述 P0 账本和熔断指引涉及模型行为，保守按触发处理；本执行环境的子智能体不能再派生隔离会话，未运行 RED/GREEN（采样数 0），不宣称行为评估通过。
+
 ## 2.3.13 — 2026-11-13
 
 已正式发布：[v2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)。第六轮**全量审查**（P0 0 / P1 1 / P2 10 / P3 17）修复：1 个 P1、10 个 P2 全部修复；17 个 P3 中 13 项修复、1 项复核后确认已满足、3 项按设计不改并写明理由（见末条）。Node 测试 124 → 135，Python 单测 19 → 28。发布不等于已安装到宿主。
@@ -25,7 +35,7 @@
 
 ## 2.3.12 — 2026-11-13
 
-已正式发布：[v2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)。第六轮审查 P2 缺陷收口：1 个数据泄露向修复 + 回归测试。发布不等于已安装到宿主。
+已正式发布：[v2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)。第六轮审查 P2 缺陷收口：修复 1 个数据泄露问题并补充回归测试。发布不等于已安装到宿主。
 
 - **P2-1：Git 模式指纹不再经链接读取仓库外字节**：`fingerprintFile` 原用 `fs.statSync` 跟随链接——未跟踪/脏条目若其路径的叶子是符号链接或中间组件是 Windows 联接点，工作区指纹会散列（进而在正文展开时展示）仓库外文件的内容。本机实测复现：快照后在仓库内建联接点，Git for Windows 将其当普通目录枚举，collect 列出联接点下的条目并完整展开正文（仓库外 token 出现在材料中，integrity 反而 complete）。修复分两层：`fingerprintFile` 改用 `fs.lstatSync`，链接自身返回 `{status:'link'}`；新增 `hasLinkAncestor`/`fingerprintPath`，Git 侧 5 个调用点（worktreeView、snapshot 的 untracked/dirty/rename-from、collect 的 evaluated 现值）先逐级 lstat 入口路径的中间组件，命中即以 `link` 状态记录。两种模式下工作区指纹一律不读取链接目标；`link` 记入 `integrity.limits`、状态转 `incomplete`，正文与摘要都不含目标字节。无 Git 清单路径不受影响（manifest 遍历已有显式守卫，叶子链接经 lstat 同样只记 link）。
 - **文档**：plan-contract「评审材料与基线」无 Git 口径句补两模式统一不读链接目标及逐级组件校验表述；`link` 加入限制枚举。
@@ -35,7 +45,7 @@
 
 ## 2.3.11 — 2026-11-12
 
-未单独发版（无 tag，内容随 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12) 一并发布）。第六轮审查缺陷专项收口：1 个 P3 健壮性缺口修复 + 回归测试。发布不等于已安装到宿主。
+未单独发版（无 tag，内容随 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12) 一并发布）。第六轮审查缺陷专项收口：修复 1 个 P3 健壮性缺口并补充回归测试。发布不等于已安装到宿主。
 
 - **P3-1：无 Git 清单显式跳过重解析点（目录符号链接/Windows 联接点）**：`manifest()`（review-material.mjs）原仅以 `Dirent.isDirectory()` 决定是否递归，目录符号链接/联接点是否被跟随取决于平台对重解析点的分类。本机 Node 24 实测联接点 `isDirectory()===false`（行为与 plan-contract「该模式的清单不遍历符号链接与联接点」口径一致），但 CI 下限 Node 20 未实机验证，且 walk 无环守卫（自指联接点在被报为目录的假设下会无限递归）。现加一行 `entry.isSymbolicLink()` 显式跳过（先于 `isDirectory()` 递归判断）：链接/junction 类条目一律不进清单，对其处置不再取决于 `isDirectory()` 对重解析点的分类结果；被报为既非链接亦非目录的条目维持原状（隐式排除、不记 limits）。环守卫维持不做。已知 Node 版本上结果不变，属防御性加固；若平台分类反转使链接被当普通目录递归，回归测试的 `tracked_files === 1` 断言会在 CI 大声失败；文档口径不变。
 - **回归测试**：新增 1 项「non-Git manifests never follow directory symlinks or junctions」——无 Git 目录下建指向仓库外目标的 junction（win32）/symlink（POSIX；无法创建时 t.skip，沿用输出守卫测试兜底惯例），断言 snapshot 与 collect 清单均不含链接后文件（files 键恰为仓库自有文件、`linked`/`linked/*` 缺席），并写入真实新文件证明常规检测未受损。Node 测试 122 → 123。
@@ -46,7 +56,7 @@
 
 ## 2.3.10 — 2026-11-12
 
-已正式发布：[v2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)。第六轮全面审查修复：1 个 P3 脚本显示缺陷 + 1 处 P3 报错措辞 + 2 处 P3 文档口径。发布不等于已安装到宿主。
+已正式发布：[v2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)。第六轮全面审查修复：1 个 P3 脚本显示缺陷、1 处 P3 报错措辞和 2 处 P3 文档口径问题。发布不等于已安装到宿主。
 
 - **P3-1：无 Git 模式材料头部不再使用 Git 概念**：`review-material.mjs` 在无 Git + 有快照时，材料头部写「BASE：空树（快照记录当时无提交）」与「基线 无提交」——「空树」「提交」是 Git 专属概念，而模式行已声明「无 Git（文件清单与指纹）」，属 2.3.3/2.3.4 修复过的「材料陈述准确性」同类残留。现改为「BASE：不适用（无 Git，按前后文件清单与指纹比较）」与「基线 无 Git」；JSON 语义不变（`base` 仍为 `null`），既有无 Git 用例补 3 条头部断言（测试数不变）。
 - **P3-2：补录无快照 BASE 回退口径**：`collect` 无快照且未指定 `--base` 时 `BASE` 回退为**当前 HEAD**（材料头部如实显示，第 1 节提交差异恒为空），此前 plan-contract/README 未记载该回退；已在 plan-contract「评审材料与基线」身份校验条补录，并明示「归属仍 unknown，不能把回退的 BASE 当作已核对基线」。按单一出处原则 README 不重复。
@@ -107,7 +117,7 @@
 
 已正式发布：[v2.3.5](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.5)。本版为 2.3.4 发布后的第二次全量双轴审查（标准轴：仓库约定 + 代码异味基线；规格轴：规格一致性与文档）发现问题的全量修复：文档口径对齐、规格去重与脚本维护性清理，门禁判定行为不变。
 
-- **账本 15 行窗口口径差一对齐**：`plan-contract.md` 原写「起始行之后 15 行内齐备」，而 `check-plan.mjs` 实扫自起始行起共 15 行（含起始行），按文档字面会放行被代码拒绝的表头；README/workflow 的「15 行内写完」与代码一致，plan-contract 是唯一异读文档。已统一为「起始行起的 15 行内（含起始行）」，新增 15/16 行边界测试 2 项锁定该行为。
+- **账本 15 行窗口边界口径对齐**：`plan-contract.md` 原写「起始行之后 15 行内齐备」，而 `check-plan.mjs` 实扫自起始行起共 15 行（含起始行），按文档字面会放行被代码拒绝的表头；README/workflow 的「15 行内写完」与代码一致，plan-contract 是唯一异读文档。已统一为「起始行起的 15 行内（含起始行）」，新增 15/16 行边界测试 2 项锁定该行为。
 - **账本可接受写法补录**：门禁实际接受但未记载的形式写入 plan-contract.md——`>` 引用前缀、`__key__`/反引号强调（冒号在标记内外均可）、`#`–`######` 标题、半角/全角冒号、文件开头 BOM 容错；对应扩展表头形式用例（underscore/backtick/quote/BOM）。
 - **规格去重（账本窗口四处重复）**：5 字段/40 行/15 行窗口原先在 SKILL.md、workflow.md、README（两处）完整重复，调整须同步四处；现按 workflow.md 已确立的「材料口径一律见 plan-contract 不重复」原则收敛为 plan-contract.md 单一出处，其余三处改为引用（2.3.3 曾因预算措辞分散被迫双处修补，属同类症状）。
 - **evidence 冒号口径**：plan-contract.md「不含盘符」改为「不含任何冒号（含盘符 `C:`）」并注明反斜杠归一，与 `check-plan.mjs` 按 `:` 字符拒绝的实现一致（实现严于原文档，属安全方向对齐）。
@@ -215,7 +225,7 @@
 
 ## 1.3.3 — 2026-11-08
 
-- 全文档排版清理、去图。
+- 清理全部文档的排版并移除图片。
 
 ## 1.3.2 — 2026-11-08
 

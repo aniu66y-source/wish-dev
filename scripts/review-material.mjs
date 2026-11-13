@@ -1365,7 +1365,7 @@ function collect(repo, options) {
   }
 
   fs.mkdirSync(path.dirname(path.resolve(options.out)), {recursive: true});
-  fs.writeFileSync(options.out, lines.join('\n').replace(/\n{3,}/g, '\n\n'), {encoding: 'utf8'});
+  fs.writeFileSync(options.out, lines.join('\n').replace(/\n{3,}/g, '\n\n'), {encoding: 'utf8', flag: 'wx'});
   summary.material_bytes = fs.statSync(options.out).size;
   return summary;
 }
