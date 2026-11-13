@@ -410,6 +410,73 @@ function makeRepo(){
 }
 const runTool=args=>spawnSync(process.execPath,[reviewScript,...args],{encoding:'utf8'});
 
+test('snapshot refuses output symlinks without creating their targets',t=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'snapshot-link-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'baseline.json');
+  fs.mkdirSync(repo);
+  try {
+    const existing=path.join(root,'existing');
+    fs.writeFileSync(existing,'original');
+    for(const dest of [existing,path.join(root,'missing'),path.join(repo,'missing')]) {
+      try { fs.symlinkSync(dest,out,'file'); } catch (error) {
+        if (!['EPERM','EACCES','ENOTSUP','EOPNOTSUPP'].includes(error.code)) throw error;
+        t.skip('file symlinks unavailable: ' + error.code); return;
+      }
+      assert.equal(runTool(['snapshot','--repo',repo,'--out',out]).status,2);
+      assert.equal(fs.lstatSync(out).isSymbolicLink(),true);
+      if(dest===existing) assert.equal(fs.readFileSync(dest,'utf8'),'original');
+      else assert.equal(fs.existsSync(dest),false);
+      fs.unlinkSync(out);
+    }
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('snapshot fails closed and reports cleanup failure',()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'snapshot-fail-'));
+  const repo=path.join(root,'repo'), preload=path.join(root,'fault.cjs');
+  fs.mkdirSync(repo);
+  try {
+    fs.writeFileSync(preload,"const fs=require('node:fs'); if(process.env.DENY_LINK) fs.linkSync=()=>{throw new Error('link denied')}; if(process.env.DENY_CLEANUP) fs.unlinkSync=()=>{throw new Error('cleanup denied')};\n");
+    for(const mode of ['link','both','cleanup']) {
+      const out=path.join(root,mode+'.json');
+      const result=spawnSync(process.execPath,['--require',preload,reviewScript,'snapshot','--repo',repo,'--out',out],{encoding:'utf8',env:{...process.env,DENY_LINK:mode==='cleanup'?'':'1',DENY_CLEANUP:mode==='link'?'':'1'}});
+      assert.equal(result.status,2,result.stdout);
+      if(mode!=='cleanup') assert.match(result.stdout,/link denied/);
+      if(mode!=='link') { assert.match(result.stdout,/cleanup denied/); assert.match(result.stdout,/\.review-material-/); }
+      if(mode==='cleanup') assert.match(result.stdout,/output published/);
+      assert.equal(fs.existsSync(out),mode==='cleanup');
+      if(mode==='cleanup') assert.equal(JSON.parse(fs.readFileSync(out,'utf8')).tool,'review-material');
+      if(mode==='link') assert.deepEqual(fs.readdirSync(root).filter(name=>name.startsWith('.review-material-')),[]);
+    }
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('snapshot preserves an output created after its precheck',()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'snapshot-race-injected-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'baseline.json'), preload=path.join(root,'race.cjs');
+  fs.mkdirSync(repo);
+  try {
+    fs.writeFileSync(preload,"const fs=require('node:fs'); const write=fs.writeFileSync, link=fs.linkSync, out=process.env.TEST_OUTPUT; fs.writeFileSync=(file,...args)=>{if(file===out) write(out,'rival'); return write(file,...args)}; fs.linkSync=(src,dest)=>{if(dest===out) write(out,'rival'); return link(src,dest)};\n");
+    const result=spawnSync(process.execPath,['--require',preload,reviewScript,'snapshot','--repo',repo,'--out',out],{encoding:'utf8',env:{...process.env,TEST_OUTPUT:out}});
+    assert.equal(result.status,2,result.stdout);
+    assert.equal(fs.readFileSync(out,'utf8'),'rival');
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('competing snapshot processes cannot replace a baseline',async()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'snapshot-race-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'baseline.json');
+  fs.mkdirSync(repo);
+  try {
+    const run=()=>new Promise((resolve,reject)=>{
+      const child=spawn(process.execPath,[reviewScript,'snapshot','--repo',repo,'--out',out],{stdio:'ignore'});
+      child.on('error',reject); child.on('exit',resolve);
+    });
+    assert.deepEqual((await Promise.all([run(),run()])).sort(),[0,2]);
+    assert.equal(JSON.parse(fs.readFileSync(out,'utf8')).tool,'review-material');
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
 test('collect exclusively creates output and preserves existing files and links',t=>{
   const root=fs.mkdtempSync(path.join(workRoot(),'collect-output-'));
   const repo=path.join(root,'repo'), out=path.join(root,'material.md');
@@ -432,14 +499,18 @@ test('collect refuses live and dangling output symlinks',t=>{
   fs.mkdirSync(repo);
   const args=['collect','--repo',repo,'--out',out];
   try {
-    for(const target of ['existing','missing']) {
-      const dest=path.join(root,target);
+    for(const target of ['existing','missing','repo-missing']) {
+      const dest=target==='repo-missing' ? path.join(repo,'missing') : path.join(root,target);
       if(target==='existing') fs.writeFileSync(dest,'target');
-      try { fs.symlinkSync(dest,out,'file'); } catch { t.skip('file symlinks unavailable'); return; }
+      try { fs.symlinkSync(dest,out,'file'); } catch (error) {
+        if (!['EPERM','EACCES','ENOTSUP','EOPNOTSUPP'].includes(error.code)) throw error;
+        t.skip('file symlinks unavailable: ' + error.code); return;
+      }
       assert.equal(runTool(args).status,2);
       assert.equal(fs.lstatSync(out).isSymbolicLink(),true);
       if(target==='existing') assert.equal(fs.readFileSync(dest,'utf8'),'target');
       else assert.equal(fs.existsSync(dest),false);
+      assert.deepEqual(fs.readdirSync(root).filter(name=>name.startsWith('.review-material-')),[]);
       fs.unlinkSync(out);
     }
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
@@ -456,6 +527,54 @@ test('collect refuses directory links at the output path',t=>{
     assert.equal(fs.lstatSync(out).isSymbolicLink(),true);
     assert.deepEqual(fs.readdirSync(target),[]);
     if(process.platform==='win32') fs.rmdirSync(out); else fs.unlinkSync(out);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('collect fails closed and cleans temporary file when hard links are unavailable',()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-no-link-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'material.md'), preload=path.join(root,'deny-link.cjs');
+  fs.mkdirSync(repo);
+  try {
+    fs.writeFileSync(preload,"require('node:fs').linkSync = () => { throw Object.assign(new Error('hard links unavailable'), {code: 'ENOTSUP'}); };\n");
+    const result=spawnSync(process.execPath,['--require',preload,reviewScript,'collect','--repo',repo,'--out',out],{encoding:'utf8'});
+    assert.equal(result.status,2,result.stdout);
+    assert.match(result.stdout,/hard links unavailable/);
+    assert.equal(fs.existsSync(out),false);
+    assert.deepEqual(fs.readdirSync(root).filter(name=>name.startsWith('.review-material-')),[]);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('collect reports publication and cleanup failures without hiding either',()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-cleanup-'));
+  const repo=path.join(root,'repo'), preload=path.join(root,'deny-cleanup.cjs');
+  fs.mkdirSync(repo);
+  try {
+    fs.writeFileSync(preload,"const fs=require('node:fs'); if (process.env.DENY_LINK) fs.linkSync=()=>{throw new Error('link denied')}; fs.unlinkSync=()=>{throw new Error('cleanup denied')};\n");
+    for(const deny of [true,false]) {
+      const out=path.join(root,deny?'failed.md':'published.md');
+      const result=spawnSync(process.execPath,['--require',preload,reviewScript,'collect','--repo',repo,'--out',out],{encoding:'utf8',env:{...process.env,DENY_LINK:deny?'1':''}});
+      assert.equal(result.status,2,result.stdout);
+      assert.match(result.stdout,/cleanup denied/);
+      assert.match(result.stdout,/\.review-material-/);
+      if(deny) assert.match(result.stdout,/link denied/);
+      else assert.match(result.stdout,/output published/);
+      assert.equal(fs.existsSync(out),!deny);
+    }
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('collect reports both write and close failures',()=>{
+  const root=fs.mkdtempSync(path.join(workRoot(),'collect-write-close-'));
+  const repo=path.join(root,'repo'), out=path.join(root,'material.md'), preload=path.join(root,'fail-io.cjs');
+  fs.mkdirSync(repo);
+  try {
+    fs.writeFileSync(preload,"const fs=require('node:fs'); const write=fs.writeFileSync, close=fs.closeSync; let target; fs.writeFileSync=(file,...args)=>{if(typeof file==='number'){target=file; throw new Error('write denied')} return write(file,...args)}; fs.closeSync=fd=>{close(fd); if(fd===target) throw new Error('close denied')};\n");
+    const result=spawnSync(process.execPath,['--require',preload,reviewScript,'collect','--repo',repo,'--out',out],{encoding:'utf8'});
+    assert.equal(result.status,2,result.stdout);
+    assert.match(result.stdout,/write denied/);
+    assert.match(result.stdout,/close denied/);
+    assert.equal(fs.existsSync(out),false);
+    assert.deepEqual(fs.readdirSync(root).filter(name=>name.startsWith('.review-material-')),[]);
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
 
@@ -673,6 +792,64 @@ test('non-Git manifests record a link as itself and never follow it', t => {
   }
 });
 
+
+// A tracked directory replaced by a junction must be rejected before Git can
+// inspect its target, including paths outside scope and paths only in history.
+for (const scenario of [
+  {command: 'snapshot', scope: 'src/**'},
+  {command: 'snapshot', scope: 'docs/**'},
+  {command: 'collect', scope: 'src/**'},
+  {command: 'collect', scope: 'docs/**'},
+  {command: 'collect', scope: 'docs/**', historical: true},
+]) {
+  test('tracked junction fails closed: ' + JSON.stringify(scenario), t => {
+    if (process.platform !== 'win32' || !hasGit) { t.skip('requires Windows and Git'); return; }
+    const {dir, git, write} = initRepo({'src/nested/tracked.txt': 'tracked body\n', 'docs/keep.txt': 'keep\n'});
+    const base = fs.mkdtempSync(path.join(workRoot(), 'tracked-junction-'));
+    const parent = path.join(dir, 'src', 'nested');
+    const outside = path.join(base, 'outside');
+    const snap = path.join(base, 'baseline.json');
+    const out = path.join(base, 'output');
+    const marker = path.join(base, 'node-access');
+    const preload = path.join(base, 'guard.cjs');
+    const token = 'external-junction-secret';
+    let linked = false;
+    try {
+      if (scenario.command === 'collect') {
+        if (scenario.historical) write('src/nested/tracked.txt', 'dirty baseline\n');
+        runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', scenario.scope]);
+        if (scenario.historical) { git('rm', '-q', '-f', 'src/nested/tracked.txt'); git('commit', '-q', '-m', 'remove'); }
+      }
+      fs.mkdirSync(outside);
+      fs.writeFileSync(path.join(outside, 'tracked.txt'), token + '\n');
+      fs.rmSync(parent, {recursive: true, force: true});
+      fs.mkdirSync(path.dirname(parent), {recursive: true});
+      fs.symlinkSync(outside, parent, 'junction'); linked = true;
+      assert.ok(fs.lstatSync(parent).isSymbolicLink(), 'fixture must be a real junction');
+      assert.equal(fs.realpathSync.native(path.join(parent, 'tracked.txt')).toLowerCase(),
+        fs.realpathSync.native(path.join(outside, 'tracked.txt')).toLowerCase());
+      // Intercept and deny Node content reads. This probe cannot observe native Git.
+      fs.writeFileSync(preload, "const fs=require('node:fs'),path=require('node:path');\n" +
+        "const target=path.resolve(process.env.GUARDED_FILE).toLowerCase();\n" +
+        "for(const name of ['openSync','readFileSync']) {const original=fs[name]; fs[name]=function(file,...args) {\n" +
+        "if(typeof file==='string' && path.resolve(file).toLowerCase()===target) {fs.writeFileSync(process.env.ACCESS_MARKER,name); throw new Error('external access blocked by test');}\n" +
+        "return original.call(this,file,...args);};}\n");
+      const args = [scenario.command, '--repo', dir, '--out', out, '--scope', scenario.scope];
+      if (scenario.command === 'collect') args.push('--snapshot', snap);
+      const result = spawnSync(process.execPath, ['--require', preload, reviewScript, ...args], {
+        encoding: 'utf8', env: {...process.env, GUARDED_FILE: path.join(parent, 'tracked.txt'), ACCESS_MARKER: marker},
+      });
+      assert.equal(fs.existsSync(marker), false, 'must not attempt Node content access through the junction');
+      assert.equal(fs.existsSync(out), false, 'must not publish output');
+      assert.equal(result.status, 2, 'must fail closed: ' + result.stdout + result.stderr);
+      assert.doesNotMatch(result.stdout + result.stderr, new RegExp(token));
+    } finally {
+      if (linked) fs.rmdirSync(parent); // Never recursively remove a junction.
+      wipe(dir, base);
+    }
+  });
+}
+
 test('git-mode fingerprints never read content through a symlink or junction', t => {
   if (!hasGit) { t.skip('git unavailable'); return; }
   const base = fs.mkdtempSync(path.join(workRoot(), 'gitlink-'));
@@ -720,6 +897,12 @@ test('git-mode fingerprints never read content through a symlink or junction', t
     return;
   }
   try {
+    if (isWin) {
+      const refused = runTool(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+      assert.equal(refused.status, 2, 'directory junction must be refused');
+      assert.equal(fs.existsSync(out), false, 'no material may be published');
+      return;
+    }
     const collected = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
     assert.ok(collected.untracked.includes(expectedFile),
       'the linked path itself is still an untracked entry and must be listed');
@@ -737,6 +920,48 @@ test('git-mode fingerprints never read content through a symlink or junction', t
     } catch {}
     wipe(base);
   }
+});
+
+test('git never hashes a tracked file replaced by a real file symlink', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir} = initRepo({'src/lf.txt': 'TRACKED_BODY\n'});
+  const base = fs.mkdtempSync(path.join(workRoot(), 'hash-link-'));
+  const snap = path.join(base, 'snapshot.json');
+  const out = path.join(base, 'material.md');
+  const outside = path.join(base, 'secret.txt');
+  const target = path.join(dir, 'src', 'lf.txt');
+  const preload = path.join(base, 'capture.cjs');
+  const calls = path.join(base, 'calls.jsonl');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+    fs.writeFileSync(outside, 'OUTSIDE_SECRET_MARKER\n');
+    fs.unlinkSync(target);
+    try { fs.symlinkSync(outside, target, 'file'); } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) { t.skip('real file symlink unavailable: ' + error.code); return; }
+      throw error;
+    }
+    fs.writeFileSync(preload, `
+      const cp = require('node:child_process');
+      const fs = require('node:fs');
+      const original = cp.spawnSync;
+      cp.spawnSync = function(command, args, options) {
+        if (command === 'git' && args.includes('hash-object'))
+          fs.appendFileSync(process.env.HASH_CALLS, JSON.stringify(args) + '\\n');
+        return original.apply(this, arguments);
+      };
+      require('node:module').syncBuiltinESMExports();
+    `);
+    const result = spawnSync(process.execPath, ['--require', preload, reviewScript,
+      'collect', '--repo', dir, '--out', out, '--snapshot', snap],
+      {encoding: 'utf8', env: {...process.env, HASH_CALLS: calls}});
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const data = JSON.parse(result.stdout);
+    assert.equal(data.integrity.status, 'incomplete');
+    assert.ok(data.integrity.limits.some(item => item.kind === 'link' && item.file === 'src/lf.txt'));
+    assert.ok(!fs.readFileSync(out, 'utf8').includes('OUTSIDE_SECRET_MARKER'));
+    const hashes = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8') : '';
+    assert.ok(!hashes.includes('src/lf.txt'), 'git hash-object must never receive the symlink path: ' + hashes);
+  } finally { wipe(dir, base); }
 });
 
 test('a tracked file replaced by a link is compared as a link, not by target bytes', t => {
@@ -776,6 +1001,12 @@ test('a tracked file replaced by a link is compared as a link, not by target byt
     return;
   }
   try {
+    if (mode === 'junction') {
+      const refused = runTool(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+      assert.equal(refused.status, 2, 'directory junction must be refused');
+      assert.equal(fs.existsSync(out), false, 'no material may be published');
+      return;
+    }
     const data = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
     assert.equal(data.integrity.status, 'incomplete',
       'a link is compared only by its own target, so integrity must say so');
@@ -880,6 +1111,136 @@ const runOk = args => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return JSON.parse(result.stdout);
 };
+// A configured filter on a tracked file outside the requested scope must be detected
+// before Git can run its command, even when merely inspecting repository status.
+for (const operation of ['snapshot', 'collect']) {
+  for (const kind of ['clean', 'process']) {
+    test(`custom Git filter ${kind} refuses ${operation} without executing it`, t => {
+      if (!hasGit) { t.skip('git unavailable'); return; }
+      const {dir, git, write} = initRepo({'src/in-scope.txt': 'safe\n', 'other/tracked.txt': 'before\n'});
+      const snap = path.join(workRoot(), path.basename(dir) + '-filter-snap.json');
+      const out = path.join(workRoot(), path.basename(dir) + '-filter-output');
+      const marker = path.join(dir, 'filter-marker');
+      try {
+        if (operation === 'collect') runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+        fs.writeFileSync(path.join(dir, '.git', 'info', 'attributes'), 'other/tracked.txt filter=hostile\n');
+        git('config', 'filter.hostile.' + kind, 'echo invoked > filter-marker; exit 1');
+        write('other/tracked.txt', 'changed tracked file\n');
+        const args = [operation, '--repo', dir, '--out', out, '--scope', 'src/**'];
+        if (operation === 'collect') args.push('--snapshot', snap);
+        const result = runTool(args);
+        assert.deepEqual({status: result.status, marker: fs.existsSync(marker), output: fs.existsSync(out)},
+          {status: 2, marker: false, output: false}, result.stdout + result.stderr);
+      } finally { wipe(dir, snap, out); }
+    });
+  }
+}
+
+// Both index-deleted and never-tracked paths can still have worktree bytes and attributes.
+for (const operation of ['snapshot', 'collect']) {
+  for (const state of ['index-deleted', 'untracked']) {
+    test(`custom filter on ${state} worktree file refuses ${operation}`, t => {
+      if (!hasGit) { t.skip('git unavailable'); return; }
+      const {dir, git, write} = initRepo({'src/safe.txt': 'safe\n', 'other/file.txt': 'old\n'});
+      const snap = path.join(workRoot(), path.basename(dir) + '-edge-snap.json');
+      const out = path.join(workRoot(), path.basename(dir) + '-edge-out');
+      const marker = path.join(dir, 'filter-marker');
+      try {
+        if (operation === 'collect') runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'src/**']);
+        if (state === 'index-deleted') git('rm', '--cached', '--', 'other/file.txt');
+        else { git('rm', '-q', '--', 'other/file.txt'); write('other/new.txt', 'untracked\n'); }
+        const file = state === 'index-deleted' ? 'other/file.txt' : 'other/new.txt';
+        fs.writeFileSync(path.join(dir, '.git', 'info', 'attributes'), file + ' filter=hostile\n');
+        git('config', 'filter.hostile.clean', 'echo invoked > filter-marker; exit 1');
+        const args = [operation, '--repo', dir, '--out', out, '--scope', 'src/**'];
+        if (operation === 'collect') args.push('--snapshot', snap);
+        const result = runTool(args);
+        assert.deepEqual({status: result.status, marker: fs.existsSync(marker), output: fs.existsSync(out)},
+          {status: 2, marker: false, output: false}, result.stdout + result.stderr);
+      } finally { wipe(dir, snap, out); }
+    });
+  }
+}
+
+test('a baseline file inside a newly nested Git repository never executes its filter', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, git, write} = initRepo({'nested/file.txt': 'before\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-nested-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-nested-out');
+  const marker = path.join(dir, 'filter-marker');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap]);
+    git('rm', '--cached', '--', 'nested/file.txt');
+    const init = spawnSync('git', ['init', '-q', 'nested'], {cwd: dir, encoding: 'utf8'});
+    assert.equal(init.status, 0, init.stderr);
+    fs.writeFileSync(path.join(dir, '.git', 'info', 'attributes'), 'nested/file.txt filter=hostile\n');
+    git('config', 'filter.hostile.clean', 'echo invoked > filter-marker; exit 1');
+    write('nested/file.txt', 'changed\n');
+    const result = runTool(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.equal(fs.existsSync(marker), false, 'nested baseline path must not execute its filter');
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.equal(fs.existsSync(out), false);
+  } finally { wipe(dir, snap, out); }
+});
+
+test('old Git without no-lazy-fetch support fails closed', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir} = initRepo({'src/a.txt': 'base\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-oldgit-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-oldgit-out');
+  const preload = path.join(workRoot(), path.basename(dir) + '-oldgit.cjs');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap]);
+    fs.writeFileSync(preload, "const cp=require('node:child_process'); const original=cp.spawnSync; cp.spawnSync=(cmd,args,opts)=>args.includes('--no-lazy-fetch') ? {status:129, stdout:'', stderr:'unknown option: --no-lazy-fetch'} : original(cmd,args,opts); require('node:module').syncBuiltinESMExports();\n");
+    for (const operation of ['snapshot', 'collect']) {
+      const args = [operation, '--repo', dir, '--out', out];
+      if (operation === 'collect') args.push('--snapshot', snap);
+      const result = spawnSync(process.execPath, ['--require', preload, reviewScript, ...args], {encoding:'utf8'});
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.match(result.stdout, /no-lazy-fetch/);
+      assert.equal(fs.existsSync(out), false);
+    }
+  } finally { wipe(dir, snap, out, preload); }
+});
+
+test('attribute inspection failure is fail closed for snapshot and collect', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir} = initRepo({'src/a.txt': 'base\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-attr-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-attr-out');
+  const preload = path.join(workRoot(), path.basename(dir) + '-attr-fail.cjs');
+  try {
+    runOk(['snapshot', '--repo', dir, '--out', snap]);
+    fs.writeFileSync(preload, "const cp=require('node:child_process'); const original=cp.spawnSync; cp.spawnSync=(cmd,args,opts)=>args.includes('check-attr') ? {status: 1, stdout: '', stderr: 'injected attribute failure'} : original(cmd,args,opts); require('node:module').syncBuiltinESMExports();\n");
+    for (const operation of ['snapshot', 'collect']) {
+      const args = [operation, '--repo', dir, '--out', out];
+      if (operation === 'collect') args.push('--snapshot', snap);
+      const result = spawnSync(process.execPath, ['--require', preload, reviewScript, ...args], {encoding: 'utf8'});
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.equal(fs.existsSync(out), false);
+    }
+  } finally { wipe(dir, snap, out, preload); }
+});
+
+test('external diff and fsmonitor commands are not executed by snapshot or collect', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, git, write} = initRepo({'src/a.txt': 'base\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-hooks-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-hooks-out');
+  const marker = path.join(dir, 'hook-marker');
+  try {
+    // Configuration alone is inert; Git must never be allowed to invoke these commands.
+    git('config', 'core.fsmonitor', 'echo invoked > hook-marker; exit 1');
+    git('config', 'diff.external', 'echo invoked > hook-marker; exit 1');
+    write('src/a.txt', 'changed\n');
+    runOk(['snapshot', '--repo', dir, '--out', snap]);
+    write('src/a.txt', 'changed again\n');
+    runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap]);
+    assert.equal(fs.existsSync(marker), false, 'Git must not execute external commands');
+    assert.ok(fs.readFileSync(out, 'utf8').includes('changed again'), 'native diff remains available');
+  } finally { wipe(dir, snap, out); }
+});
+
 const materialOf = file => fs.readFileSync(file, 'utf8');
 const layers = (list, file) => list.filter(entry => entry.file === file).map(entry => entry.layer);
 
@@ -987,6 +1348,12 @@ test('a link present at snapshot time is compared by its own target only', t => 
   };
   if (!makeLink(first)) { t.skip('link creation unavailable on this platform'); wipe(base); return; }
   try {
+    if (isWin) {
+      const refused = runTool(['snapshot', '--repo', dir, '--out', snap]);
+      assert.equal(refused.status, 2, 'directory junction must be refused');
+      assert.equal(fs.existsSync(snap), false, 'no snapshot may be published');
+      return;
+    }
     runOk(['snapshot', '--repo', dir, '--out', snap]);
     // Retarget the junction: the recorded identity must differ even though the bytes behind
     // it are byte-for-byte identical.

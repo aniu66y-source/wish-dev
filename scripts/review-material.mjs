@@ -55,7 +55,8 @@ function hashFile(file) {
 }
 
 function run(cwd, command, args, encoding = 'utf8', input = undefined) {
-  const result = spawnSync(command, args, {cwd, encoding, maxBuffer: 256 * 1024 * 1024, input});
+  const result = spawnSync(command, args, {cwd, encoding, maxBuffer: 256 * 1024 * 1024, input,
+    env: {...process.env, GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0'}});
   // spawnSync reports "could not start" (ENOENT, EACCES, too long argv) through error and
   // leaves status null; silently returning that produced a bare "failed: null" far away
   // from the cause.
@@ -71,7 +72,94 @@ function run(cwd, command, args, encoding = 'utf8', input = undefined) {
 // pathspec pattern; core.quotePath=false keeps non-ASCII paths readable without touching
 // the user's Git configuration. Pass encoding=null for raw Buffer output.
 function git(cwd, args, encoding = 'utf8', input = undefined) {
-  return run(cwd, 'git', ['-c', 'core.quotePath=false', '--literal-pathspecs', ...args], encoding, input);
+  const safeArgs = args[0] === 'diff' ? [args[0], '--no-ext-diff', '--no-textconv', ...args.slice(1)] : args;
+  return run(cwd, 'git', ['-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false',
+    '--literal-pathspecs', ...safeArgs], encoding, input);
+}
+
+// Trust boundary: Git executable, configuration, attributes, index and worktree must not
+// be changed concurrently during collection. This is not a sandbox for a hostile Git
+// executable/configuration; preflight prevents configured content filters from running.
+// Include ignored files: a path removed from the index or retained only in an older
+// snapshot can still be hashed later. Do this before status, diff or worktree hashing.
+// Inspect every directory, including ignored paths, before Git can traverse the worktree.
+// No link is traversed. Windows attributes expose reparse points that Node's lstat may
+// not classify; PowerShell inspects the entries themselves, not their target contents.
+function scanWorktree(repo) {
+  if (process.platform === 'win32') {
+    const script = "$ErrorActionPreference='Stop'; $todo=[System.Collections.Generic.Stack[string]]::new(); $todo.Push($env:REVIEW_SCAN_ROOT); while ($todo.Count) { $dir=$todo.Pop(); foreach ($item in [System.IO.Directory]::EnumerateFileSystemEntries($dir)) { if ([System.IO.Path]::GetFileName($item) -ieq '.git') { continue }; $attr=[System.IO.File]::GetAttributes($item); if ($attr -band [System.IO.FileAttributes]::ReparsePoint) { $entry=Get-Item -Force -LiteralPath $item; if (($attr -band [System.IO.FileAttributes]::Directory) -or $entry.LinkType -ne 'SymbolicLink') { throw 'directory link or unrecognized reparse point: ' + $item }; continue }; if ($attr -band [System.IO.FileAttributes]::Directory) { $todo.Push($item) } } }";
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+      encoding: 'utf8', env: {...process.env, REVIEW_SCAN_ROOT: repo}, maxBuffer: 1024 * 1024,
+    });
+    if (result.error || result.status !== 0) throw new Error('worktree reparse safety scan failed: ' + (result.error?.message ?? result.stderr));
+  }
+  const files = [];
+  const pending = [''];
+  while (pending.length) {
+    const dir = pending.pop();
+    for (const name of fs.readdirSync(path.join(repo, dir))) {
+      if (name.toLowerCase() === '.git') continue;
+      const relative = dir ? dir + '/' + name : name;
+      const full = path.join(repo, relative);
+      const info = fs.lstatSync(full);
+      if (info.isSymbolicLink()) {
+        // Only metadata is queried; never enumerate or read the target. An unknown
+        // target (including a dangling link or permission error) fails closed.
+        if (!fs.statSync(full).isFile()) throw new Error('directory link or unsafe symlink: ' + relative);
+        files.push(relative);
+      } else if (info.isDirectory()) pending.push(relative);
+      else if (info.isFile()) files.push(relative);
+      else throw new Error('unsupported worktree entry: ' + relative);
+    }
+  }
+  return files;
+}
+
+function assertRelativePath(file) {
+  if (typeof file !== 'string' || !file || file.includes('\0') || path.posix.isAbsolute(file)
+      || path.win32.isAbsolute(file) || (process.platform === 'win32' && file.includes('\\'))
+      || file.split('/').some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) {
+    throw new Error('unsafe repository path: ' + String(file));
+  }
+}
+
+function assertNoContentFilters(repo) {
+  const scannedFiles = scanWorktree(repo);
+  // Older Git versions ignore GIT_NO_LAZY_FETCH. Require the corresponding global
+  // option as a capability check before any command that could read missing objects.
+  const capability = run(repo, 'git', ['--no-lazy-fetch', '--version']);
+  if (capability.status !== 0) throw new Error('Git lacks --no-lazy-fetch support');
+  const listing = git(repo, ['ls-files', '--cached', '--others', '-z'], null);
+  if (listing.status !== 0) throw new Error('git ls-files filter preflight failed');
+  const names = listing.stdout.toString('utf8');
+  if (!Buffer.from(names).equals(listing.stdout)) throw new Error('non-UTF-8 path in filter preflight');
+  const paths = [...new Set([...names.split('\0').filter(Boolean), ...scannedFiles])];
+  // An untracked nested repository is reported as a directory, not its files.
+  // Historical snapshot/tree paths can nevertheless cause Git to hash files inside it.
+  if (paths.some(file => file.endsWith('/'))) {
+    throw new Error('nested Git repository is not supported by Git filter safety preflight');
+  }
+  for (const file of paths) assertRelativePath(file);
+  const stages = git(repo, ['ls-files', '--stage', '-z']);
+  if (stages.status !== 0) throw new Error('git index filter preflight failed');
+  // Git status can recurse into a submodule and invoke its own filters. Refuse rather
+  // than silently omit submodule changes or claim to have inspected its configuration.
+  if (stages.stdout.split('\0').some(record => record.startsWith('160000 '))) {
+    throw new Error('submodules are not supported by Git filter safety preflight');
+  }
+  if (!paths.length) return;
+  const result = git(repo, ['check-attr', '-z', '--stdin', '--all'], null, Buffer.from(paths.join('\0') + '\0'));
+  if (result.status !== 0) throw new Error('git check-attr filter preflight failed');
+  const output = result.stdout.toString('utf8');
+  if (!Buffer.from(output).equals(result.stdout)) throw new Error('non-UTF-8 attribute in filter preflight');
+  const fields = output.split('\0');
+  if (fields.pop() !== '' || fields.length % 3 !== 0) throw new Error('invalid git check-attr output');
+  // --all distinguishes no attribute from literal values such as "unspecified".
+  // Refusing even an explicit -filter is conservative and avoids ambiguous values.
+  for (let i = 0; i < fields.length; i += 3) {
+    if (fields[i + 1] === 'filter') throw new Error('custom Git filter not allowed: ' + fields[i]);
+  }
 }
 
 function gitValue(cwd, args) {
@@ -193,6 +281,7 @@ function linkFingerprint(file) {
 }
 
 function fingerprintPath(root, rel) {
+  assertRelativePath(rel);
   const link = linkComponent(root, rel);
   if (link) return linkFingerprint(link);
   return fingerprintFile(path.join(root, rel));
@@ -271,6 +360,8 @@ function blobFingerprint(repo, sha) {
 // eol conversions) are applied, so a checkout that only spells the same content with CRLF
 // hashes equal to the HEAD blob instead of looking like a task change.
 function worktreeContentId(repo, file) {
+  // Under the stable-worktree boundary, never let Git follow a link or read a non-file.
+  if (fingerprintPath(repo, file).status !== 'ok') return null;
   const result = git(repo, ['hash-object', '--', file]);
   return result.status === 0 ? result.stdout.trim() || null : null;
 }
@@ -489,9 +580,29 @@ function manifest(repo, {skipGit}) {
   return files;
 }
 
-function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(path.resolve(file)), {recursive: true});
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', {encoding: 'utf8'});
+function publishExclusive(file, content) {
+  const output = path.resolve(file);
+  const parent = path.dirname(output);
+  fs.mkdirSync(parent, {recursive: true});
+  // Publish with an exclusive hard link: on Windows, wx alone can follow a dangling symlink.
+  // The parent and its ancestors must be protected from concurrent replacement.
+  const temporary = path.join(parent, `.review-material-${crypto.randomBytes(16).toString('hex')}.tmp`);
+  const fd = fs.openSync(temporary, 'wx', 0o600);
+  let failure;
+  try { fs.writeFileSync(fd, content, 'utf8'); } catch (error) { failure = error; }
+  try { fs.closeSync(fd); } catch (error) {
+    failure = failure ? new Error(failure.message + '; close failed: ' + error.message) : error;
+  }
+  if (!failure) {
+    try { fs.linkSync(temporary, output); } catch (error) { failure = error; }
+  }
+  try {
+    fs.unlinkSync(temporary);
+  } catch (error) {
+    const status = failure ? 'output not published: ' + failure.message : 'output published';
+    throw new Error(status + '; temporary file cleanup failed: ' + temporary + ': ' + error.message);
+  }
+  if (failure) throw failure;
 }
 
 function assertDirectory(repo) {
@@ -552,6 +663,7 @@ function snapshot(repo, options) {
     throw new Error('baseline snapshot already exists: ' + path.resolve(options.out)
       + ' (use a new --out path or delete the old baseline; a silent overwrite would misattribute changes)');
   }
+  if (gitMode) assertNoContentFilters(root);
   const base = gitMode ? head(root) : null;
   const state = {
     tool: TOOL,
@@ -594,7 +706,7 @@ function snapshot(repo, options) {
   } else {
     state.files = manifest(root, {skipGit: true});
   }
-  writeJson(options.out, state);
+  publishExclusive(options.out, JSON.stringify(state, null, 2) + '\n');
   return {
     ok: true,
     mode: state.mode,
@@ -625,6 +737,12 @@ function readSnapshot(file, {repo, mode, options}) {
   }
   if (!state.repo || !samePath(state.repo, repo)) {
     throw new Error('snapshot belongs to another repository: ' + (state.repo ?? '(unknown)') + ' != ' + repo);
+  }
+  for (const field of ['dirty', 'untracked', 'files']) {
+    if (state[field] != null && (typeof state[field] !== 'object' || Array.isArray(state[field]))) {
+      throw new Error('invalid snapshot paths: ' + field);
+    }
+    for (const name of Object.keys(state[field] ?? {})) assertRelativePath(name);
   }
   if (options.scopeProvided) {
     const left = [...options.scope].sort();
@@ -1027,6 +1145,7 @@ function collect(repo, options) {
   const undetectable = !gitMode && !state;
   assertSafeOutput(options.out, root, options.snapshot);
   const scope = resolveScope(options, state);
+  if (gitMode) assertNoContentFilters(root);
   const currentHead = gitMode ? head(root) : null;
   const baseInfo = resolveBase(root, options, state, currentHead);
   const notes = [];
@@ -1364,9 +1483,9 @@ function collect(repo, options) {
     if (headerIndex >= 0) lines[headerIndex] = `- 完整性：incomplete（${limits.length} 项见第 8 节）`;
   }
 
-  fs.mkdirSync(path.dirname(path.resolve(options.out)), {recursive: true});
-  fs.writeFileSync(options.out, lines.join('\n').replace(/\n{3,}/g, '\n\n'), {encoding: 'utf8', flag: 'wx'});
-  summary.material_bytes = fs.statSync(options.out).size;
+  const material = lines.join('\n').replace(/\n{3,}/g, '\n\n');
+  publishExclusive(options.out, material);
+  summary.material_bytes = Buffer.byteLength(material, 'utf8');
   return summary;
 }
 

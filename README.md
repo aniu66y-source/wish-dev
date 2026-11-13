@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.14**，已发布：评审材料独占输出、账本首字段与同根因失败次数口径修复）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `version` 为准（当前 **2.3.15**，未发布：修复快照及采集输出的链接与并发写入问题）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)，发布于 2026-11-13。上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
@@ -188,6 +188,9 @@ node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"
 # 评审材料：派发实现前记录基线，派发评审前生成材料（只读采集，不提交/不暂存/不重置）
 node "<skill>/scripts/review-material.mjs" snapshot --repo "<repo>" --out "<runtime>/baseline-T-1-01.json" --scope "src/**,test/**"
 node "<skill>/scripts/review-material.mjs" collect --repo "<repo>" --out "<runtime>/material-T-1-01.md" --snapshot "<runtime>/baseline-T-1-01.json" --label T-1-01
+# Git 模式需要 Git >= 2.45 且支持 --no-lazy-fetch；拒绝显式 filter（含 LFS）、索引子模块及 Git 报出的未跟踪嵌套库
+# 全树预扫描含忽略目录（跳过 .git），拒绝目录链接/junction、悬空链接；扫描错误直接失败，Windows 依赖 powershell.exe
+# 大型工作树可能变慢；Git 程序、配置、属性、索引和工作区须可信，采集期间不支持并发篡改；详见 plan-contract.md
 # 覆盖 BASE..HEAD 提交、暂存、未暂存、未跟踪新增内容、删除与重命名；候选集 = 基线 ∪ 当前 Git 变化 ∪ 提交
 # 归属只有 task / pre-existing / mixed / unknown；任务前已有用户改动单列，不并入本任务
 # 快照记录 base=null 时按空树比较首次提交；ok 只表示命令成功，完整性另看 integrity.status
