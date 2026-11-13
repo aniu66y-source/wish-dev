@@ -3,7 +3,9 @@
 版本号与 `SKILL.md` frontmatter 的 `metadata.version` 一致；发布附件见 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)。
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 
-## 2.3.15 — 2026-11-13（未发布）
+## 2.3.15 — 2026-11-13
+
+已正式发布：[v2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)。
 
 - Git 模式快照及材料采集前扫描全工作树（含忽略目录、跳过 `.git`）并检查文件的 filter 属性；显式 filter（包括 `-filter` 和 Git LFS）即拒绝，不回退原始字节比较。目录链接/junction、悬空链接及无法确认安全的链接被拒；Windows 依赖 `powershell.exe` 检查重解析点，并拒绝无法识别的重解析点。扫描或属性检查失败即报错停止；全树扫描在大型工作树及大量忽略文件时有性能开销。关闭 fsmonitor、外部 diff/textconv 与懒获取，保留 Git 换行归一化。需要 Git 2.45 或更新版且支持 `--no-lazy-fetch`，索引子模块及 Git 报出的未跟踪嵌套仓库暂不支持；Git 程序、配置、索引、属性及工作区需可信且采集期间不被并发篡改，并非完整沙箱，也不承诺抵御并发替换。
 - SC-02 新增账本首字段正反例及隔离要求，并运行了 RED/GREEN 行为采样（本宿主 DSH 子代理，2026-11-13，C/D 各 RED/GREEN 5 样本，原始记录在运行根 D:/codex/eval/2026-11-13/，不入库）：RED C 2/5 通过（3 项违规：2 项未在记录中观察 exit 2 门禁、1 项修复前即开始实现）、RED D 4/5 通过（1 项静默重排原账本并自声明评审上下文）、GREEN C/D 各 5/5 通过（全部样本先门禁后修复/实现；评审或经 summon_expert 真实独立上下文、或会话内兜底并如实披露，无伪造 ID；样本另证实 check-plan 接受两列表格表头、非 wish-id 首的 bullet 表头 exit 2）。宿主限制（叶子子代理无法派生嵌套子代理）使 GREEN 样本的独立执行体降级为会话内披露兜底；本运行不等同于 GitHub Actions 八组矩阵，不宣称行为评估通过。
