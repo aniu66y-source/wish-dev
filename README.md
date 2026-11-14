@@ -17,10 +17,10 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.19**（未发布）：第九轮全量审查 P2/P3 根因修复；最新正式版 **2.3.18**：Windows 范围的账本隐藏区域、链接解析、Git 权限元数据与版本读取修复，以及文档瘦身，含未单独发布的 2.3.17 改动）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.19**（已正式发布）：第九轮全量审查 P2/P3 根因修复；最新正式版 **2.3.19**）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
-- 最新正式版：[2.3.18](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.18)，发布于 2026-11-14（Windows-only：账本隐藏区域与链接解析、Git 权限元数据、版本读取修复，以及文档瘦身）。上一版 [2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)（2026-11-13，门禁覆盖、材料忠实性与文档口径）；再上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
+- 最新正式版：[2.3.19](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.19)，发布于 2026-11-14（第九轮全量审查 P2/P3 根因修复：CHANGELOG 发布前措辞修正、正文链接解码测试补钉、修复预算措辞统一、{stories:null} 测试钉住，行为评估不触发（采样数 0））。上一版 [2.3.18](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.18)（2026-11-14，Windows 范围账本隐藏区域与链接解析、Git 权限元数据与版本读取修复及文档瘦身，含未单独发布的 2.3.17 改动）；再上一版 [2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)（2026-11-13，门禁覆盖、材料忠实性与文档口径）；再上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
 - 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），2.3.15 另有 SC-02 变体 C/D 的 RED/GREEN 各 5 次采样（RED C 2/5、RED D 4/5，GREEN 各 5/5），见 [行为评估](tools/eval/README.md)；2.3.16 只改门禁、材料忠实性与文档；2.3.17 只改脚本与文档（未改 P0 硬规则与模型行为指引），两者均未新增行为采样（采样数 0）；2.3.18 修复脚本、更正平台/链接说明并做文档瘦身（未改 P0 硬规则与计划格式），亦未新增行为采样。不能据此宣称全部宿主或全部行为验收通过
 
 ---
@@ -48,7 +48,7 @@
 
 | 方式 | 说明 |
 |---|---|
-| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（最新发布版本为 2.3.18，含未单独发布的 2.3.17 改动），按宿主规则导入 |
+| ZIP 导入 | 下载 [最新 Release](https://github.com/aniu66y-source/wish-dev/releases) 的 `wish-dev-<ver>.zip`（最新发布版本为 2.3.19，含未单独发布的 2.3.17 改动），按宿主规则导入 |
 | 目录复制 | 解压 Release ZIP，将其中完整 `wish-dev/` 目录复制到宿主 skills 目录；不要只拷 SKILL.md，也不要把整个源码仓库当安装包 |
 | 校验 | `sha256sum wish-dev-<ver>.zip`（Windows：`Get-FileHash wish-dev-<ver>.zip -Algorithm SHA256`）比对 Release 页 `.sha256` 记录 |
 
