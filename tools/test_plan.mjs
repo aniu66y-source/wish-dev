@@ -67,6 +67,9 @@ test('nextActions on a story-less plan is a safe no-op, not a crash',()=>{
   assert.deepEqual(nextActions(null),[{action:'final_acceptance'}]);
   assert.deepEqual(nextActions({}),[{action:'final_acceptance'}]);
 });
+test('explicit {stories:null} is story-less, not a crash',()=>{
+  assert.deepEqual(nextActions({stories:null}),[{action:'final_acceptance'}]);
+});
 test('a running final fix does not hide an independent ready line',()=>{
   const p=fixture();
   p.stories[0].status='running';p.stories[0].attempts=3;

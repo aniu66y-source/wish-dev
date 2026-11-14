@@ -454,6 +454,10 @@ class TextResourceValidationTest(unittest.TestCase):
         result = self.validate_with({"references/notes.md": body})
         self.assertEqual(result["internal_links_checked"], 0)
 
+    def test_invalid_encoded_prose_target_is_fatal(self):
+        with self.assertRaisesRegex(ValueError, "Invalid link destination"):
+            self.validate_with({"references/notes.md": b"[x](%ff.md)\n"})
+
     def test_missing_link_with_inner_title_is_still_rejected(self):
         with self.assertRaises(ValueError) as caught:
             self.validate_with({"references/notes.md":

@@ -17,7 +17,7 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.18**，已发布：Windows 范围的账本隐藏区域、链接解析、Git 权限元数据与版本读取修复，以及文档瘦身；含未单独发布的 2.3.17 改动）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.19**（未发布）：第九轮全量审查 P2/P3 根因修复；最新正式版 **2.3.18**：Windows 范围的账本隐藏区域、链接解析、Git 权限元数据与版本读取修复，以及文档瘦身，含未单独发布的 2.3.17 改动）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.18](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.18)，发布于 2026-11-14（Windows-only：账本隐藏区域与链接解析、Git 权限元数据、版本读取修复，以及文档瘦身）。上一版 [2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)（2026-11-13，门禁覆盖、材料忠实性与文档口径）；再上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）

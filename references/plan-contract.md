@@ -76,7 +76,7 @@ Node 18+：node "<skill>/scripts/check-plan.mjs" "<wish>/prd.json"。产品实�
 - `architecture.approach` 为总体结构；`architecture.simplification` 说明如何保持简洁和统一职责。
 - `architecture.concurrency`：适用时 `{applicable:true, assumptions, controls, verification}`；不适用时 `{applicable:false, reason}`。
 - `architecture.load_balancing`：适用时 `{applicable:true, strategy, state, failure_handling, verification}`；不适用时 `{applicable:false, reason, scale_trigger}`。每个说明字段为有意义的非空字符串。
-- `budget`：正整数 `max_fix_attempts`，必填、建议 3、用户实际预算优先（缺省会过不了门禁报 `must be a positive integer`，无内置兜底）。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
+- `budget`：正整数 `max_fix_attempts`，必填、通常取 3、用户实际预算优先（缺省会过不了门禁报 `must be a positive integer`，无内置兜底）。`max_tasks` 仅在有明确任务数预算时填写正整数，不默认 12 或任何固定包数；动态分包仍遵守时间、成本、范围及外部限制。
 - `stories`：非空任务数组，每项即一个工作包，不限于编码，包含唯一 `id: "T-1-01"`（`T-<线>-<序号>`，序号至少两位数字，与下发块「任务编号」、交付块、`depends_on` 用**同一字符串**，避免二次编号；旧 `WP-01`/`S-01` 仍接受但不再用于新计划）、`title`、`status`、`attempts`、`allowed_files`（可写范围，见「写入权限（三类）」）、`accept_refs` 和 `verify`；可以增加 `priority`、`depends_on`、`read_only`、`read_scope`、`jobId`、`sessionId`、`messageId` 等实际需要的字段。只读任务写 `read_only: true` 且 `allowed_files: []`；声明 `read_only` 却带非空 `allowed_files` 会被判为自相矛盾。`depends_on` 若存在必须引用已知 task ID（同一套编号），不能形成循环；启动依赖任务前，其前置任务必须已验收为 `done`。
 
 ## 状态和验证
