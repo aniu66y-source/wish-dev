@@ -1022,12 +1022,49 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
   }
   section('## 2. 暂存区差异（尚未提交）', 'index', ['--cached'], gitMode ? '（无暂存变化）' : '（无 Git：不适用）');
   if (gitMode) {
-    section('## 3. 未暂存差异（工作区 vs 索引）', 'worktree', [], '（无未暂存变化）');
-    // Files whose index entry differs but whose worktree still matches the task-start
-    // content: the difference comes from staging, not from the task writing new content.
+    // Files whose index entry differs while the worktree still matches the task-start
+    // content. The baseline snapshot decides which side moved: a workspace that already
+    // differed from the index before the task must not be blamed on staging; causes the
+    // baseline cannot prove (missing snapshot, unreadable blob, link) stay unattributed.
     const indexDifferenceOnly = summary.unstaged.filter(file => !changes.some(entry => entry.file === file && entry.layer === 'worktree'));
-    if (indexDifferenceOnly.length) {
-      lines.push(`> 以下文件相对索引有差异，但工作区内容与任务开始时一致，差异来自暂存/索引操作，未计入本任务实现内容：${indexDifferenceOnly.join('、')}`, '');
+    // The layer holds no task-scoped entry, yet these files do differ from the index. The
+    // bare empty state would read as "nothing changed" and contradict the attribution
+    // paragraph rendered directly below, so say what is true instead.
+    section('## 3. 未暂存差异（工作区 vs 索引）', 'worktree', [],
+      indexDifferenceOnly.length ? '（本任务实现内容无未暂存变化；下列索引差异的归因见后）' : '（无未暂存变化）');
+    const preExistingGap = [];
+    const stagedDuringTask = [];
+    const unexplainedGap = [];
+    for (const file of indexDifferenceOnly) {
+      const entry = state ? state.dirty[file] : null;
+      if (!state || state.untracked[file]) {
+        unexplainedGap.push(file);
+      } else if (entry) {
+        const wt = entry.worktree && entry.worktree.status === 'ok' ? entry.worktree : null;
+        if (entry.index && wt) {
+          const idx = blobView(root, entry.index).fingerprint;
+          if (!idx || idx.status !== 'ok') unexplainedGap.push(file);
+          else if (idx.sha256 === wt.sha256) stagedDuringTask.push(file);
+          else preExistingGap.push(file);
+        } else if (!entry.index && wt) {
+          // Baseline content existed while the index had no entry: already inconsistent.
+          preExistingGap.push(file);
+        } else {
+          unexplainedGap.push(file);
+        }
+      } else {
+        // Clean tracked file at task start: index and worktree were provably equal.
+        stagedDuringTask.push(file);
+      }
+    }
+    if (preExistingGap.length) {
+      lines.push(`> 以下文件相对索引有差异，但工作区内容与任务开始时一致；基线快照显示任务开始前工作区即与索引不一致（既有未暂存改动，非本任务造成），未计入本任务实现内容，归属见第 6/7 节：${preExistingGap.join('、')}`, '');
+    }
+    if (stagedDuringTask.length) {
+      lines.push(`> 以下文件相对索引有差异，但任务开始时工作区与索引一致（基线内容比对），差异来自任务期间的暂存/索引操作，未计入本任务实现内容：${stagedDuringTask.join('、')}`, '');
+    }
+    if (unexplainedGap.length) {
+      lines.push(`> 以下文件相对索引有差异，但工作区内容与任务开始时一致；基线不足以判断差异成因，未计入本任务实现内容：${unexplainedGap.join('、')}`, '');
     }
   } else {
     const entries = changes.filter(entry => entry.scope === 'in' && entry.layer === 'worktree' && entry.kind !== 'deleted');

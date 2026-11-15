@@ -587,5 +587,254 @@ class BlockedDirectoryCaseTest(unittest.TestCase):
         self.assertEqual(sorted(names), ["SKILL.md", "references/kept.md"])
 
 
+class ListContainerMaskTest(unittest.TestCase):
+    """A list or blockquote marker establishes its item's content column (CommonMark),
+    so a continuation indented to that column is prose, not document-level indented
+    code. Document-level rules stay: 4+ spaces after a blank line is still code, and
+    an indented line never breaks a paragraph."""
+
+    HEAD = ('---\nname: wish-dev\ndescription: 用于测试的前置元数据\n'
+            'license: "Proprietary"\ncompatibility: "host"\nmetadata:\n  version: "1.0.0"\n---\n')
+
+    def validate_with(self, files):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "SKILL.md").write_text(self.HEAD, encoding="utf-8", newline="\n")
+        for name, body in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return skill.validate([root / "SKILL.md"] + [root / name for name in files])
+
+    def check(self, body):
+        return self.validate_with({"references/notes.md": body.encode("utf-8")})
+
+    def test_list_item_four_space_continuation_reports_missing_link(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("- 列表项\n\n    [缺失](missing.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Missing packaged reference", message)
+        self.assertIn("original link target: missing.md", message)
+
+    def test_list_item_four_space_continuation_reports_skill_escape(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("- 列表项\n\n    [外部](../../outside.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Reference leaves skill", message)
+        self.assertIn("original link target: ../../outside.md", message)
+
+    def test_nested_list_continuation_reports_missing_link(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("- 外层\n  - 内层\n\n      [缺失](missing.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Missing packaged reference", message)
+        self.assertIn("original link target: missing.md", message)
+
+    def test_ordered_list_continuation_reports_missing_link(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("1. 步骤说明\n\n    [缺失](missing.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Missing packaged reference", message)
+        self.assertIn("original link target: missing.md", message)
+
+    def test_two_space_list_continuation_still_prose(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("- 列表项\n\n  [缺失](missing.md)\n")
+        self.assertIn("Missing packaged reference", str(caught.exception))
+
+    def test_blockquote_marker_four_space_content_is_example(self):
+        try:
+            result = self.check("> 引用项\n\n>     [示例](missing.md)\n")
+        except ValueError as error:
+            # 旧实现把引用内的缩进代码当真实链接：必须是可读的断言失败，不是 ERROR。
+            self.fail("引用内缩进代码不得要求打包目标：" + str(error))
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_list_marker_five_spaces_opens_code_inside_item(self):
+        # CommonMark 5.2：标记后 5 个以上空格只占 1 个内容列，其余是项内缩进代码。
+        try:
+            result = self.check("-      [示例](missing.md)\n")
+        except ValueError as error:
+            self.fail("项内缩进代码不得要求打包目标：" + str(error))
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_tab_indented_code_after_blank_is_example(self):
+        result = self.check("段落第一行\n\n\t[示例](missing.md)\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_deeply_indented_list_continuation_is_example(self):
+        result = self.check("- 列表项\n\n        [示例](missing.md)\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_fenced_example_inside_list_item_is_example(self):
+        result = self.check("- 示例：\n\n    ```\n    [示例](missing.md)\n    ```\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_paragraph_four_space_continuation_still_prose(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("段落第一行\n    [缺失](missing.md)\n")
+        self.assertIn("Missing packaged reference", str(caught.exception))
+
+    def test_document_indented_code_after_blank_is_example(self):
+        result = self.check("段落第一行\n\n    [示例](missing.md)\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+
+class LocalAbsolutePathLinkTest(unittest.TestCase):
+    """A Windows drive letter or UNC prefix only LOOKS like a URI scheme: it is a local
+    absolute path and must fail the same containment check as its percent-encoded twin."""
+
+    HEAD = ('---\nname: wish-dev\ndescription: 用于测试的前置元数据\n'
+            'license: "Proprietary"\ncompatibility: "host"\nmetadata:\n  version: "1.0.0"\n---\n')
+
+    def validate_with(self, files):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "SKILL.md").write_text(self.HEAD, encoding="utf-8", newline="\n")
+        for name, body in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return skill.validate([root / "SKILL.md"] + [root / name for name in files])
+
+    def check(self, body):
+        return self.validate_with({"references/notes.md": body.encode("utf-8")})
+
+    def test_bare_drive_forward_slash_link_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("[x](C:/Windows/win.ini)\n")
+        message = str(caught.exception)
+        self.assertIn("Reference leaves skill", message)
+        self.assertIn("original link target: C:/Windows/win.ini", message)
+
+    def test_bare_drive_backslash_link_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check(r"[x](C:\Windows\win.ini)" + "\n")
+        message = str(caught.exception)
+        self.assertIn("Reference leaves skill", message)
+        self.assertIn("original link target: C:\\Windows\\win.ini", message)
+
+    def test_unc_forward_slash_link_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("[x](//server/share/x.md)\n")
+        self.assertIn("Reference leaves skill", str(caught.exception))
+
+    def test_unc_backslash_link_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check(r"[x](\\server\share\x.md)" + "\n")
+        self.assertIn("Reference leaves skill", str(caught.exception))
+
+    def test_percent_encoded_drive_target_rejected_like_bare_form(self):
+        with self.assertRaises(ValueError) as caught:
+            self.check("[x](%43%3A%5CWindows%5Cwin.ini)\n")
+        self.assertIn("Reference leaves skill", str(caught.exception))
+
+    def test_drive_relative_link_is_rejected(self):
+        # C:Windows 是盘符相对路径（冒号后无斜杠），不得被当作单字母 URI scheme 跳过。
+        with self.assertRaises(ValueError) as caught:
+            self.check("[x](C:Windows/win.ini)\n")
+        message = str(caught.exception)
+        self.assertIn("Reference leaves skill", message)
+        self.assertIn("original link target: C:Windows/win.ini", message)
+
+    def test_drive_letter_in_fence_stays_example(self):
+        result = self.check("```\n[x](C:/Windows/win.ini)\n```\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_external_schemes_are_still_skipped(self):
+        body = ("[a](http://example.invalid/x.md)\n\n[b](https://example.invalid/x.md)\n\n"
+                "[c](mailto:someone@example.invalid)\n\n[d](ftp://example.invalid/x)\n\n"
+                "[e](tel:+123456)\n\n[f](file:///etc/hosts)\n\n[g](urn:isbn:000)\n\n"
+                "[h](data:text/plain,hello)\n")
+        result = self.check(body)
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_anchor_and_fragment_semantics_unchanged(self):
+        files = {"references/notes.md": b"[a](#sec)\n\n[b](guide.md#frag)\n",
+                 "references/guide.md": b"# Guide\n"}
+        result = self.validate_with(files)
+        self.assertEqual(result["internal_links_checked"], 1)
+
+
+class LinesMetricTest(unittest.TestCase):
+    """The reported line count must match the manifest's real line count: a trailing
+    newline does not add a phantom line."""
+
+    def quality(self, manifest):
+        patcher = mock.patch.multiple(skill, contract_gaps=mock.DEFAULT, version_drift=mock.DEFAULT)
+        mocked = patcher.start()
+        mocked["contract_gaps"].return_value = []
+        mocked["version_drift"].return_value = []
+        self.addCleanup(patcher.stop)
+        return skill.skill_quality(manifest)
+
+    def test_lines_with_trailing_newline_counts_real_lines(self):
+        self.assertEqual(self.quality("x\n" * 45)["lines"], 45)
+
+    def test_lines_without_trailing_newline_counts_real_lines(self):
+        self.assertEqual(self.quality("x\nx")["lines"], 2)
+
+    def test_real_skill_md_reported_lines_match_splitlines(self):
+        manifest = (skill.ROOT / "SKILL.md").read_text(encoding="utf-8")
+        quality = self.quality(manifest)
+        self.assertEqual(quality["lines"], len(manifest.splitlines()))
+        self.assertEqual(quality["dimensions"]["completeness"], "PASS")
+
+
+class DanglingSymlinkTest(unittest.TestCase):
+    """A resource entry that cannot be stat-ed (a dangling symlink is the common case)
+    is refused, never silently dropped, mirroring the hidden-file rule in resources()."""
+
+    HEAD = ('---\nname: wish-dev\ndescription: 用于测试的前置元数据\n'
+            'license: "Proprietary"\ncompatibility: "host"\nmetadata:\n  version: "1.0.0"\n---\n')
+
+    def make_root(self):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "SKILL.md").write_text(self.HEAD, encoding="utf-8", newline="\n")
+        (root / "references").mkdir()
+        original = skill.ROOT
+        skill.ROOT = root
+        self.addCleanup(setattr, skill, "ROOT", original)
+        return root
+
+    def symlink_or_skip(self, target, link_path):
+        try:
+            os.symlink(str(target), str(link_path))
+        except (OSError, NotImplementedError) as error:
+            self.skipTest("创建符号链接需要 Windows 开发者模式或特权，本机不可用：" + str(error))
+
+    def test_dangling_symlink_is_refused_not_dropped(self):
+        root = self.make_root()
+        self.symlink_or_skip(root / "references" / "missing-target.md",
+                             root / "references" / "dangling.md")
+        with self.assertRaises(ValueError) as caught:
+            skill.resources()
+        message = str(caught.exception)
+        self.assertIn("Refusing to package dangling or unreadable resource links", message)
+        self.assertIn("references/dangling.md", message)
+
+    def test_symlink_to_file_outside_repository_is_refused_by_validate(self):
+        root = self.make_root()
+        outside = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(outside.cleanup)
+        target = Path(outside.name) / "elsewhere.md"
+        target.write_text("# elsewhere\n", encoding="utf-8", newline="\n")
+        self.symlink_or_skip(target, root / "references" / "link.md")
+        files = skill.resources()
+        with self.assertRaises(ValueError) as caught:
+            skill.validate(files)
+        self.assertIn("Resource leaves repository", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

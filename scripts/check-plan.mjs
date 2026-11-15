@@ -176,6 +176,10 @@ const LEDGER_HEADER_START=40;
 const LEDGER_HEADER_SPAN=15;
 const TABLE_SEPARATOR=/^\|[\s:|-]+\|$/;
 
+// Sentinel for fully hidden lines (fence body, consumed comment rows, indented code):
+// unlike the empty string it cannot read as a blank line inside the header window.
+const MASKED_LINE='\u0000';
+
 function stripLedgerPrefix(line){
   return line.trim().replace(/^[>\s]*/,'').replace(/^#{1,6}\s*/,'').replace(/^(?:[-*+]|\d+[.)])\s+/,'');
 }
@@ -192,54 +196,112 @@ function normalizeLedgerLine(line){
 }
 
 function headerLine(value,raw){
+  // MASKED_LINE marks rows fully hidden by fences, comments or indented code: they are not
+  // blank lines and must terminate the header block instead of bridging halves across it.
+  if(raw===MASKED_LINE)return false;
   return value===''||LEDGER_FIELDS.some(([,pattern])=>pattern.test(value))||TABLE_SEPARATOR.test(raw.trim());
+}
+
+// Indented-code detection below shares the container model of ledgerFence: quote markers and
+// list content columns only, no third parser. These helpers are the single source for both.
+function expandLedgerTabs(line){
+  let value='';
+  for(const char of line)value+=char==='\t'?' '.repeat(4-value.length%4):char;
+  return value;
+}
+function peelLedgerContainers(value,containers){
+  let rest=value;
+  for(const container of containers){
+    if(container==='quote'){
+      const quote=rest.match(/^ {0,3}> ?/);
+      if(!quote)return null;
+      rest=rest.slice(quote[0].length);
+    }else{
+      if(!rest.startsWith(' '.repeat(container)))return null;
+      rest=rest.slice(container);
+    }
+  }
+  return rest;
+}
+function detectLedgerContainers(value){
+  const context=[];
+  let rest=value;
+  for(;;){
+    // CommonMark 5.2: one to four spaces after a list marker start the item content, five or
+    // more claim exactly one (the rest indents code inside the item), and a marker line with
+    // only trailing spaces stays an empty item at its minimum content column.
+    const prefix=rest.match(/^ {0,3}(> ?|(?:[-*+]|\d{1,9}[.)])(?: (?= *$)| {1,4}(?! )| ))/);
+    if(!prefix)break;
+    context.push(prefix[1].startsWith('>')?'quote':prefix[0].length);
+    rest=rest.slice(prefix[0].length);
+  }
+  return {context,rest};
+}
+// Peel the container stack (popping levels the line no longer carries), then consume any
+// deeper container markers. Returns the structural remainder plus the relative indent of
+// the line content inside the surviving containers.
+function lineContext(value,containers){
+  let stack=containers.slice();
+  let peeled=null;
+  for(;;){
+    peeled=peelLedgerContainers(value,stack);
+    if(peeled!==null)break;
+    if(!stack.length)break;
+    stack.pop();
+  }
+  if(peeled===null)peeled=value;
+  const detected=detectLedgerContainers(peeled);
+  const rest=detected.rest;
+  return {rest,stack:stack.concat(detected.context),rel:rest.length-rest.replace(/^ +/,'').length};
 }
 
 // Fence containers are syntax, not ledger decoration: a list marker or heading in code
 // cannot close a fence. Remember list continuation widths and quote nesting separately.
 function ledgerFence(line,containers=null){
-  let value='';
-  for(const char of line)value+=char==='\t'?' '.repeat(4-value.length%4):char;
-  const context=containers??[];
+  const value=expandLedgerTabs(line);
+  let rest;
+  let context;
   if(containers){
-    for(const container of containers){
-      if(container==='quote'){
-        const quote=value.match(/^ {0,3}> ?/);
-        if(!quote)return null;
-        value=value.slice(quote[0].length);
-      }else{
-        if(!value.startsWith(' '.repeat(container)))return null;
-        value=value.slice(container);
-      }
-    }
+    rest=peelLedgerContainers(value,containers);
+    if(rest===null)return null;
+    context=containers;
   }else{
-    while(true){
-      const prefix=value.match(/^ {0,3}(> ?|(?:[-*+]|\d{1,9}[.)]) +)/);
-      if(!prefix)break;
-      context.push(prefix[1].startsWith('>')?'quote':prefix[0].length);
-      value=value.slice(prefix[0].length);
-    }
+    const detected=detectLedgerContainers(value);
+    context=detected.context;
+    rest=detected.rest;
   }
-  const marker=value.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+  const marker=rest.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
   return marker?{marker:marker[1],tail:marker[2],containers:context}:null;
 }
 
-// Hidden regions are not the ledger: an HTML comment renders nowhere, and a fenced code
-// sample renders as code, so neither can satisfy the write-ahead gate. Line indexes are
-// preserved so the "within the first 40 lines" window still means the visible file.
+// Hidden regions are not the ledger: an HTML comment renders nowhere, and fenced or indented
+// code samples render as code, so neither can satisfy the write-ahead gate. Indented code is
+// detected by container-relative indent and honours the CommonMark rule that an indented block
+// cannot interrupt a paragraph: continuation lines of a visible paragraph stay visible.
+// Line indexes are preserved so the first-40-lines window still means the visible file.
 function maskHidden(lines){
   const visible=[];
   let fence=null;
   let inComment=false;
+  let containers=[];
+  let paragraph=false;
+  let inCode=false;
   for(const line of lines){
     if(fence){
       const close=ledgerFence(line,fence.containers);
-      if(close&&close.marker[0]===fence.marker[0]&&close.marker.length>=fence.marker.length&&/^\s*$/.test(close.tail))fence=null;
-      visible.push('');
+      if(close&&close.marker[0]===fence.marker[0]&&close.marker.length>=fence.marker.length&&/^\s*$/.test(close.tail)){fence=null;paragraph=false;}
+      visible.push(MASKED_LINE);
       continue;
+    }
+    if(inCode){
+      // An indented-code region swallows everything on its indented lines, comment tokens included.
+      if(line.trim()===''){visible.push(MASKED_LINE);continue;}
+      if(lineContext(expandLedgerTabs(line),containers).rel>=4){visible.push(MASKED_LINE);continue;}
+      inCode=false;
     }
     let value='';
     let cursor=0;
+    let hadComment=false;
     while(cursor<line.length){
       if(inComment){
         const close=line.indexOf('-->',cursor);
@@ -250,14 +312,33 @@ function maskHidden(lines){
         const open=line.indexOf('<!--',cursor);
         if(open<0){value+=line.slice(cursor);break;}
         value+=line.slice(cursor,open);
+        hadComment=true;
         inComment=true;
         cursor=open+4;
       }
     }
-    const marker=ledgerFence(value);
+    if(value.trim()===''){
+      if(line.trim()===''&&!hadComment&&!inComment){visible.push('');paragraph=false;continue;}
+      visible.push(MASKED_LINE);
+      // Only a comment opening on this line interrupts the paragraph; a line inside a
+      // multi-line inline comment keeps it, so the comment's own indented continuation
+      // still renders as text (CommonMark 4.6: inline comments do not end a paragraph).
+      if(hadComment)paragraph=false;
+      continue;
+    }
+    const ctx=lineContext(expandLedgerTabs(value),containers);
+    const marker=ctx.rest.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     // Once a fence opens, comment tokens on that line are literal code/info text.
-    if(marker){fence=marker;inComment=false;visible.push('');}
-    else visible.push(value);
+    if(marker){fence={marker:marker[1],tail:marker[2],containers:ctx.stack.slice()};inComment=false;paragraph=false;visible.push(MASKED_LINE);continue;}
+    if(ctx.rel>=4&&!paragraph){
+      // Rendered as an indented code block: mask the region; blank lines inside it stay code.
+      inCode=true;
+      visible.push(MASKED_LINE);
+      continue;
+    }
+    containers=ctx.stack;
+    visible.push(value);
+    paragraph=!/^ {0,3}#{1,6}(\s|$)/.test(ctx.rest);
   }
   return visible;
 }

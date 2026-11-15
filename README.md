@@ -17,11 +17,11 @@
 
 ---
 
-- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.3.19**（已正式发布）：第九轮全量审查 P2/P3 根因修复；最新正式版 **2.3.19**）
+- 当前版本以 [SKILL.md](SKILL.md) frontmatter `metadata.version` 为准（当前 **2.4.0**，未发布：第十轮全量审查的 P1/P2/P3 修复（账本门禁缩进代码、评审材料索引差异归因、打包链接容器缩进与本地绝对目标）；最新正式版 **2.3.19**）
 - 发布产物统一走 [GitHub Releases](https://github.com/aniu66y-source/wish-dev/releases)；git 树不保存 `packages/`
 - 逐版变更见 [CHANGELOG.md](CHANGELOG.md)、[Releases](https://github.com/aniu66y-source/wish-dev/releases) 或 git log
 - 最新正式版：[2.3.19](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.19)，发布于 2026-11-14（第九轮全量审查 P2/P3 根因修复：CHANGELOG 发布前措辞修正、正文链接解码测试补钉、修复预算措辞统一、{stories:null} 测试钉住，行为评估不触发（采样数 0））。上一版 [2.3.18](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.18)（2026-11-14，Windows 范围账本隐藏区域与链接解析、Git 权限元数据与版本读取修复及文档瘦身，含未单独发布的 2.3.17 改动）；再上一版 [2.3.16](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.16)（2026-11-13，门禁覆盖、材料忠实性与文档口径）；再上一版 [2.3.15](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.15)（2026-11-13，Git 模式全树扫描与链接拒绝、SC-02 C/D 行为采样）；再上一版 [2.3.14](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.14)（2026-11-13，collect 输出原子独占创建、账本 wish-id 首字段口径）；再上一版 [2.3.13](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.13)（第六轮全量审查 P1/P2/P3 修复）；再上一版 [2.3.12](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.12)（2026-11-13，Git 模式指纹不再经符号链接/联接点读取仓库外字节）；再上一版 [2.3.10](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.10)（2026-11-12，第六轮审查 P3 修复）；2.3.11 未单独发版（无 tag），内容随 2.3.12 发布；再上一版 [2.3.9](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.3.9)（执行期静默回归修复）
-- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），2.3.15 另有 SC-02 变体 C/D 的 RED/GREEN 各 5 次采样（RED C 2/5、RED D 4/5，GREEN 各 5/5），见 [行为评估](tools/eval/README.md)；2.3.16 只改门禁、材料忠实性与文档；2.3.17 只改脚本与文档（未改 P0 硬规则与模型行为指引），两者均未新增行为采样（采样数 0）；2.3.18 修复脚本、更正平台/链接说明并做文档瘦身（未改 P0 硬规则与计划格式），亦未新增行为采样。不能据此宣称全部宿主或全部行为验收通过
+- 验证范围：2.2.0 的三个真实项目交付实测由用户确认；2.3.0 的源码与本地回归结果见 Release。行为采样在 2.3.5 部分运行（SC-02 变体 A 与 SC-05 的 RED 各 5 次完整，SC-01/03/04 未运行，GREEN 完整样本不足），2.3.9 另有 SC-06 变体 A 的 RED/GREEN 各 3 次缩减采样（不足 5 次，不宣称通过），2.3.15 另有 SC-02 变体 C/D 的 RED/GREEN 各 5 次采样（RED C 2/5、RED D 4/5，GREEN 各 5/5），见 [行为评估](tools/eval/README.md)；2.3.16 只改门禁、材料忠实性与文档；2.3.17 只改脚本与文档（未改 P0 硬规则与模型行为指引），两者均未新增行为采样（采样数 0）；2.3.18 修复脚本、更正平台/链接说明并做文档瘦身（未改 P0 硬规则与计划格式），亦未新增行为采样；2.3.19 与 2.3.20 同样只改门禁、采集与打包脚本及文档口径（未改 P0 硬规则与计划格式），两者均未新增行为采样（采样数 0）。不能据此宣称全部宿主或全部行为验收通过
 
 ---
 
@@ -132,7 +132,7 @@ wish-dev/
 └── AGENTS.md                        仓库维护约定
 ```
 
-打包**只包含** `SKILL.md`、`references/`、`scripts/`（以及存在时的 `assets/`）里**后缀白名单**内的文件（文本与常见图片/图标）；`__pycache__`、`node_modules`、`dist` 等缓存目录跳过，日志/缓存/临时文件/压缩包与其他未知后缀**直接报错拒绝打包**，不会被静默带入或静默丢弃。这道边界按名称判定，不能识别所有凭据或诊断内容；提交前仍须人工审查差异。不含 Git 元数据、维护工具（`tools/`）、日志或本机诊断文件。
+打包**只包含** `SKILL.md`、`references/`、`scripts/`（以及存在时的 `assets/`）里**后缀白名单**内的文件（文本与常见图片/图标）；`__pycache__`、`node_modules`、`dist` 等缓存目录跳过，日志/缓存/临时文件/压缩包与其他未知后缀**直接报错拒绝打包**，不会被静默带入或静默丢弃；隐藏文件与隐藏目录（名字以 `.` 开头，如 `.hidden.md`、`.draft/`）同样拒绝而不是跳过。这道边界按名称判定，不能识别所有凭据或诊断内容；提交前仍须人工审查差异。不含 Git 元数据、维护工具（`tools/`）、日志或本机诊断文件。
 
 ---
 
@@ -151,7 +151,7 @@ New-Item -ItemType Directory -Force -Path $env:WISH_DEV_RUNTIME_ROOT | Out-Null
 ```bash
 # 1. 结构校验（Python 3.10+，无第三方依赖）
 python -B tools/package_skill.py --check
-# 输出含 skill_quality（7 维质量报告：contracts 校验 4 个文件的 24 条契约锚点，含 P0 保护规则，缺锚点即 exit 1；versions 校验 SKILL/CHANGELOG 与 README 中「当前…」「最新…」行声明的版本一致，同一行只取首个版本号）、internal_links 命中数（行内链接/图片支持完整 `<path>` 目标（可含空格）、裸目标的平衡括号与标点转义，以及目标外以空白分隔的双引号/单引号/括号标题；`<path "title">` 整体是路径而非内嵌标题。本地目标去原始片段后按 UTF-8 解码一次并检查仓库边界与打包清单；正文引用式定义及 full/collapsed 引用明确拒绝，孤立 `[文本]` 保留。HTML 注释、顶层 0–3 空格围栏、按块上下文识别的缩进代码及同段行内代码中的样例仅在解析成功且命中打包文件时计数；外部与锚点链接不校验、不计数；这是有限语法扫描而非完整 CommonMark 渲染，未支持的引用容器围栏等结构不按示例放宽，无法解析或缺失引用会明确拒绝），
+# 输出含 skill_quality（7 维质量报告：contracts 校验 4 个文件的 24 条契约锚点，含 P0 保护规则，缺锚点即 exit 1；versions 校验 SKILL/CHANGELOG 与 README 中「当前…」「最新…」行声明的版本一致，同一行只取首个版本号）、internal_links 命中数（行内链接/图片支持完整 `<path>` 目标（可含空格）、裸目标的平衡括号与标点转义，以及目标外以空白分隔的双引号/单引号/括号标题；`<path "title">` 整体是路径而非内嵌标题。本地目标去原始片段后按 UTF-8 解码一次并检查仓库边界与打包清单；`C:/…`、`C:\…`、`//server/…`、`\server\…` 这类 Windows 盘符与 UNC 目标是本地绝对路径而非 URI scheme，正文中一律按「引用越出技能目录」拒绝（与其百分号编码写法同口径），围栏与行内示例仍豁免；正文引用式定义及 full/collapsed 引用明确拒绝，孤立 `[文本]` 保留。HTML 注释、顶层 0–3 空格围栏、按容器内容列（列表/有序/引用嵌套的相对缩进 ≥4 列）识别的缩进代码及同段行内代码中的样例仅在解析成功且命中打包文件时计数（空行后的列表项 4 空格续段是正文，其坏链接仍会报错）；外部与锚点链接不校验、不计数；这是有限语法扫描而非完整 CommonMark 渲染，未支持的引用容器围栏等结构不按示例放宽，无法解析或缺失引用会明确拒绝），
 # 以及 js_syntax_checked / js_syntax_skipped（用 node --check 校验 scripts/ 下 .mjs，无 Node 时跳过并计数）。
 # frontmatter 按仓库支持的简化 YAML 子集真解析：未闭合语法、流式集合、块标量、重复键、version 层级错误、
 # 未加引号的 version、非法转义、会歧义成布尔/null/数字的裸值一律 exit 1（能力范围见下方说明）。

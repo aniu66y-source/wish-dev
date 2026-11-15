@@ -52,12 +52,18 @@ def resources():
     """
     result = [ROOT / "SKILL.md"]
     rejected = []
+    broken = []
     for name in RESOURCE_DIRS:
         directory = ROOT / name
         if not directory.is_dir():
             continue
         for path in directory.rglob("*"):
             if not path.is_file():
+                if not path.is_dir():
+                    # A dangling symlink or an entry that cannot be stat-ed is refused,
+                    # never silently dropped: an unaccounted file in a resource directory
+                    # contradicts the hidden-file rule below just like it does a link.
+                    broken.append(path.relative_to(ROOT).as_posix())
                 continue
             parts = path.relative_to(ROOT).parts
             # Directory names compare case-insensitively: the same tree arrives from hosts
@@ -76,6 +82,10 @@ def resources():
                 rejected.append(path.relative_to(ROOT).as_posix())
                 continue
             result.append(path)
+    if broken:
+        raise ValueError(
+            "Refusing to package dangling or unreadable resource links (never silently "
+            "skipped): " + ", ".join(sorted(broken)))
     if rejected:
         raise ValueError(
             "Refusing to package non-publishable files (logs, caches, temp files, archives "
@@ -156,7 +166,8 @@ def skill_quality(manifest):
     """Lightweight, non-blocking quality read (completeness/examples/conciseness/
     crossPlatform/license/contracts/versions). Mirrors a _scores.json style report
     without the A/B impact harness: it only reports, never gates the exit code."""
-    lines = manifest.count("\n") + 1
+    # splitlines counts real lines: a trailing newline is not a phantom extra line.
+    lines = len(manifest.splitlines())
     examples = len(re.findall(r"(?m)^[~`]{3,}", manifest)) // 2
     desc = re.search(r"^description:\s*(.+)$", manifest, re.M)
     desc_chars = len(desc[1]) if desc else 0
@@ -360,6 +371,37 @@ def parse_frontmatter(body):
     return data
 
 
+def _container_column(expanded, base):
+    """The content column a blockquote/list marker chain establishes at or after base,
+    or None when the line carries no container marker.
+
+    CommonMark: the marker fixes its item's content indent, so a continuation indented
+    only to that column is prose, not document-level indented code. Up to three leading
+    spaces still belong to a nested marker; a list marker followed by five or more
+    spaces claims only one space and the rest indent code inside the item.
+    """
+    col = base
+    levels = 0
+    while True:
+        lead = re.match(r" {0,3}", expanded[col:])[0]
+        body = expanded[col + len(lead):]
+        if body.startswith(">"):
+            col += len(lead) + 1
+            if expanded[col:col + 1] == " ":
+                col += 1
+            levels += 1
+            continue
+        marker = re.match(r"(?:[-+*]|\d{1,9}[.)])(?=[ ]|$)", body)
+        if marker is None:
+            break
+        end = col + len(lead) + marker.end()
+        run = re.match(r" +", expanded[end:])
+        spaces = run[0] if run else ""
+        col = end + 1 if not spaces or len(spaces) >= 5 else end + len(spaces)
+        levels += 1
+    return col if levels else None
+
+
 def masked_markdown(source):
     """Blank comments, fenced/indented blocks and inline code before checking links.
 
@@ -370,8 +412,17 @@ def masked_markdown(source):
     source = re.sub(r"<!--[\s\S]*?-->", blank, source)
     lines = source.split("\n")
     fence, paragraph, indented = None, False, False
+    container = 0
     for index, line in enumerate(lines):
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        expanded = line.expandtabs(4)
+        # The first three spaces still belong to a marker. Indentation is measured
+        # relative to the open container's content column (list/blockquote, nested):
+        # four extra spaces past that column are code inside the item, fewer is prose.
+        indent = len(expanded) - len(expanded.lstrip(" "))
+        relative = indent - container
+        window = expanded if relative < 0 else expanded[container:]
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", window)
+        was_paragraph = paragraph
         if fence is not None:
             # A closer has only whitespace after a same-character, long-enough run.
             if (marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence)
@@ -381,8 +432,7 @@ def masked_markdown(source):
             paragraph = False
         elif not line.strip():
             paragraph = False
-        elif len(line.expandtabs(4)) - len(line.expandtabs(4).lstrip(" ")) >= 4 and (
-                indented or not paragraph):
+        elif relative >= 4 and (indented or not paragraph):
             # Indented code cannot interrupt a paragraph, unlike fenced code.
             lines[index] = " " * len(line)
             indented = True
@@ -391,7 +441,24 @@ def masked_markdown(source):
             lines[index] = " " * len(line)
             paragraph, indented = False, False
         else:
-            paragraph, indented = True, False
+            column = _container_column(expanded, container if relative >= 0 else 0)
+            if column is not None:
+                container = column
+                rest = expanded[column:]
+                if not rest.strip():
+                    paragraph = False
+                elif len(rest) - len(rest.lstrip(" ")) >= 4:
+                    # A marker whose own content starts four spaces past the column
+                    # opens indented code inside the item (e.g. "-      x").
+                    lines[index] = " " * len(line)
+                    paragraph, indented = False, True
+                else:
+                    paragraph, indented = True, False
+            else:
+                paragraph, indented = True, False
+                if relative < 0 and not was_paragraph:
+                    # A dedented fresh block closes the old container.
+                    container = 0
     source = "\n".join(lines)
     # Exact-length backtick runs delimit inline code; escaped openers stay prose.
     index = 0
@@ -606,8 +673,19 @@ def validate(files):
                 for target, raw_target, example in markdown_links(source):
                     # Classify URI syntax before decoding. An encoded # belongs to the
                     # filename; an encoded scheme must never bypass local containment.
-                    if target.startswith("#") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+                    # A drive letter (C:/, C:\\ or drive-relative C:x) and a UNC/leading-slash prefix
+                    # only LOOK like schemes: they are local absolute paths and must hit
+                    # the same containment check as their percent-encoded twin, never be
+                    # silently skipped like http:/mailto: externals.
+                    local_absolute = re.match(r"[A-Za-z]:|[/\\]{2}", target)
+                    if target.startswith("#") or (local_absolute is None
+                                                  and re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target)):
                         continue
+                    if local_absolute:
+                        detail = "{} (original link target: {})".format(target, raw_target)
+                        if example:
+                            continue
+                        raise ValueError("Reference leaves skill: " + detail)
                     target = target.split("#", 1)[0]
                     if not target:
                         continue

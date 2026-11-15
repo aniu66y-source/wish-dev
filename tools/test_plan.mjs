@@ -214,7 +214,32 @@ const ledgers={
   afterHeadingFenceText:()=>['# ~~~',...fieldLines].join('\n'),
   preface:()=>['# progress','- 下一步：等协调者补充（示例模板，不是账本表头）',ledgerHeader()].join('\n'),
   reordered:()=>[fieldLines[1],fieldLines[0],...fieldLines.slice(2)].join('\n')+'\n',
-  reorderedRest:()=>[fieldLines[0],fieldLines[4],fieldLines[2],fieldLines[1],fieldLines[3]].join('\n')+'\n'
+  reorderedRest:()=>[fieldLines[0],fieldLines[4],fieldLines[2],fieldLines[1],fieldLines[3]].join('\n')+'\n',
+  // r10: 整块缩进 4 列按 CommonMark 渲染为缩进代码块，不能充当可见账本表头。
+  indentedWhole:()=>['# progress',...fieldLines.map(l=>'    '+l)].join('\n')+'\n',
+  // r10: 引用块 '> ' 后再缩进 4 列，同样是引用内的代码块。
+  indentedQuote:()=>['# progress',...fieldLines.map(l=>'>     '+l)].join('\n')+'\n',
+  // r10: 段落之后的 4 列缩进行是段落续行（可见文本），不得误判为代码。
+  lazyParagraph:()=>['# progress','说明如下',...fieldLines.map(l=>'    '+l)].join('\n')+'\n',
+  // r10: 列表内容列 2 之下的 4 列缩进（相对 2）是合法续行，必须仍可见。
+  listItemIndent:()=>['# progress','- 备注','',...fieldLines.map(l=>'    '+l)].join('\n')+'\n',
+  // r10: 围栏把表头切成不连续块——被掩码行必须终止表头。
+  fenceSplitHeader:()=>['# progress',fieldLines[0],fieldLines[1],'~~~','sample','~~~',...fieldLines.slice(2)].join('\n')+'\n',
+  // r10: 整行 HTML 注释同理终止表头块。
+  commentSplitHeader:()=>['# progress',fieldLines[0],fieldLines[1],'<!-- 中途注释 -->',...fieldLines.slice(2)].join('\n')+'\n',
+  // r10: 标记后 5 个以上空格只占 1 个内容列（CommonMark 5.2），其余是项内缩进代码。
+  indentedListMarkerFiveSpaces:()=>['# progress',...fieldLines.map(l=>'-     '+l.slice(2))].join('\n')+'\n',
+  indentedOrderedMarkerFiveSpaces:()=>['# progress',...fieldLines.map(l=>'10.     '+l.slice(2))].join('\n')+'\n',
+  indentedQuoteListFiveSpaces:()=>['# progress',...fieldLines.map(l=>'> -     '+l.slice(2))].join('\n')+'\n',
+  indentedListItemTab:()=>['# progress',...fieldLines.map(l=>'-\t\t'+l.slice(2))].join('\n')+'\n',
+  // r10: 文档级 Tab 缩进（折算 4 列）同样是代码块。
+  indentedTab:()=>['# progress',...fieldLines.map(l=>'\t'+l)].join('\n')+'\n',
+  // r10: 列表项内 4 列缩进代码里的 ~~~ 不是围栏，其后的合法账本必须仍可见。
+  fenceLikeIndentedInList:()=>['# progress','- 复现步骤：','-     ~~~','-     npm test','-     ~~~','',...fieldLines].join('\n')+'\n',
+  // r10: 标记后 4 个空格是项内内容列，字段必须可见（防修过头）。
+  listMarkerFourSpaces:()=>['# progress',...fieldLines.map(l=>'-    '+l.slice(2))].join('\n')+'\n',
+  // r10: 行内注释的跨行续行不结束段落，其后的 4 列缩进是段落续行。
+  inlineCommentContinuation:()=>['# progress','说明如下 <!-- 开始','续行 -->',...fieldLines.map(l=>'    '+l)].join('\n')+'\n'
 };
 
 function cli(source, check, {ledger='full'}={}){
@@ -336,6 +361,57 @@ test('ledger permits remaining fields in any order after wish-id',()=>{
     assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}]);
   },{ledger:'reorderedRest'});
 });
+
+// r10 第十轮审查回归：缩进代码块与掩码行的表头终止性。
+test('r10 indented code block cannot satisfy the ledger gate',()=>{
+  const cases=['indentedWhole','indentedQuote','indentedTab','indentedListMarkerFiveSpaces',
+    'indentedOrderedMarkerFiveSpaces','indentedQuoteListFiveSpaces','indentedListItemTab'];
+  for(const ledger of cases){
+    cli(JSON.stringify(fixture()),result=>{
+      const data=JSON.parse(result.stdout);
+      assert.equal(result.status,2,ledger+' 应被拒绝');
+      assert.equal(data.ledger,false,ledger+' 不得被认作可见账本');
+      const reason=data.errors.find(e=>e.startsWith('ledger field missing:'));
+      assert.ok(reason,ledger+' 应以账本字段缺失为由拒绝，实际：'+JSON.stringify(data.errors));
+      for(const field of ['wish-id','acceptance','current-package','next-action','blocker'])
+        assert.ok(reason.includes(field),ledger+' 缺失字段应点名 '+field+'，实际：'+reason);
+    },{ledger});
+  }
+});
+test('r10 masked lines terminate the ledger header block',()=>{
+  for(const ledger of ['fenceSplitHeader','commentSplitHeader']){
+    cli(JSON.stringify(fixture()),result=>{
+      const data=JSON.parse(result.stdout);
+      assert.equal(result.status,2,ledger+' 应被拒绝');
+      assert.equal(data.ledger,false,ledger+' 表头不得跨越被掩码的行');
+      const reason=data.errors.find(e=>e.startsWith('ledger field missing:'));
+      assert.ok(reason&&reason.includes('current-package')&&reason.includes('blocker'),
+        ledger+' 应点名被掩码截断后的缺失字段，实际：'+JSON.stringify(data.errors));
+    },{ledger});
+  }
+});
+test('r10 lazy indented paragraph continuation stays visible',()=>{
+  for(const ledger of ['lazyParagraph','listItemIndent']){
+    cli(JSON.stringify(fixture()),result=>{
+      const data=JSON.parse(result.stdout);
+      assert.equal(result.status,0,ledger+' 不应被误拒');
+      assert.equal(data.ledger,true,ledger+' 续行仍是可见文本');
+      assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}],ledger+' 可见账本应产出派发动作');
+    },{ledger});
+  }
+});
+test('r10 list content columns keep legal ledgers visible',()=>{
+  // 防修过头：标记后 4 空格、项内缩进代码示例、行内注释续行都必须让账本保持可见。
+  for(const ledger of ['listMarkerFourSpaces','fenceLikeIndentedInList','inlineCommentContinuation']){
+    cli(JSON.stringify(fixture()),result=>{
+      const data=JSON.parse(result.stdout);
+      assert.equal(result.status,0,ledger+' 不应被误拒：'+JSON.stringify(data.errors));
+      assert.equal(data.ledger,true,ledger+' 合法账本必须可见');
+      assert.deepEqual(data.next_actions,[{action:'execute',task_id:'T-1-01'}],ledger+' 应产出派发动作');
+    },{ledger});
+  }
+});
+
 test('ledger missing one header field is rejected',()=>{
   cli(JSON.stringify(fixture()),result=>{
     assert.equal(result.status,2);
@@ -692,6 +768,56 @@ test('review material covers every layer of uncommitted work',t=>{
     fs.rmSync(snap,{force:true});fs.rmSync(out,{force:true});
   }
 });
+
+test('r10 review material separates pre-existing index gap from task staging',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  // (a) 任务开始前工作区即与索引不一致（既有未暂存改动）：第 3 节不得归因暂存/索引操作。
+  {
+    const {dir,git,write}=makeRepo();
+    const name=path.basename(dir);
+    const snap=path.join(workRoot(),name+'-snap.json');
+    const out=path.join(workRoot(),name+'-pre.md');
+    try{
+      write('src/unstaged.js','const u=2 changed before snapshot\n');
+      fs.rmSync(snap,{force:true});
+      assert.equal(runTool(['snapshot','--repo',dir,'--out',snap,'--scope','src/**']).status,0);
+      const collected=runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap,'--scope','src/**','--label','T-10-01']);
+      assert.equal(collected.status,0,collected.stderr);
+      const data=JSON.parse(collected.stdout);
+      assert.ok(data.unstaged.includes('src/unstaged.js'));
+      assert.ok(data.pre_existing.some(entry => entry.file === 'src/unstaged.js'));
+      const material=fs.readFileSync(out,'utf8');
+      assert.ok(!/差异来自暂存\/索引操作/.test(material),'既有不一致不得被归因为暂存/索引操作');
+      assert.ok(material.includes('任务开始前工作区即与索引不一致'),'必须说明差异在任务开始前已存在');
+      assert.ok(/任务开始前工作区即与索引不一致[^\n]*src\/unstaged\.js/.test(material),'点名具体文件');
+      assert.ok(!material.includes('（无未暂存变化）'),'存在索引差异时第 3 节不得打印「无未暂存变化」空态');
+      assert.ok(material.includes('本任务实现内容无未暂存变化；下列索引差异的归因见后'),'空态必须指向紧随其后的归因段落');
+    }finally{fs.rmSync(out,{force:true});fs.rmSync(snap,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
+  }
+  // (b) 任务期间暂存/索引造成的差异：归因任务期间暂存，且不得写任务前既有。
+  {
+    const {dir,git,write}=makeRepo();
+    const name=path.basename(dir);
+    const snap=path.join(workRoot(),name+'-snap2.json');
+    const out=path.join(workRoot(),name+'-staged.md');
+    try{
+      fs.rmSync(snap,{force:true});
+      assert.equal(runTool(['snapshot','--repo',dir,'--out',snap,'--scope','src/**']).status,0);
+      write('src/a.js','const a=2 staged mid-task\n');
+      git('add','src/a.js');
+      write('src/a.js','const a=1\n');
+      const collected=runTool(['collect','--repo',dir,'--out',out,'--snapshot',snap,'--scope','src/**','--label','T-10-02']);
+      assert.equal(collected.status,0,collected.stderr);
+      const data=JSON.parse(collected.stdout);
+      assert.ok(data.unstaged.includes('src/a.js'));
+      const material=fs.readFileSync(out,'utf8');
+      assert.ok(/差异来自任务期间的暂存\/索引操作[^\n]*src\/a\.js/.test(material),'任务期间索引侧差异必须归因暂存/索引操作');
+      assert.ok(!material.includes('任务开始前工作区即与索引不一致'),'基线一致时不得写任务前既有');
+      assert.ok(!material.includes('（无未暂存变化）'),'暂存侧差异同样不得打印「无未暂存变化」空态');
+    }finally{fs.rmSync(out,{force:true});fs.rmSync(snap,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
+  }
+});
+
 
 test('review material without a snapshot flags the attribution gap',t=>{
   if(!hasGit){t.skip('git unavailable');return;}
