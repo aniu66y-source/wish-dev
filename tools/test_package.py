@@ -749,6 +749,27 @@ class LocalAbsolutePathLinkTest(unittest.TestCase):
         result = self.check("```\n[x](C:/Windows/win.ini)\n```\n")
         self.assertEqual(result["internal_links_checked"], 0)
 
+    def test_local_absolute_verdict_ignores_the_filesystem(self):
+        # On a POSIX runner these cases used to fail: Path.resolve treated "C:\Windows\..."
+        # as an ordinary relative name, so the gate reported "Missing packaged reference"
+        # instead of "Reference leaves skill". Absolute syntax must be decided before any
+        # filesystem lookup so every runner reaches the same verdict.
+        original = Path.resolve
+
+        def resolve_without_host(self, *args, **kwargs):
+            name = str(self)
+            if any(part in name for part in ("Windows", "server")):
+                raise AssertionError("host filesystem lookup for " + name)
+            return original(self, *args, **kwargs)
+
+        links = ("[x](C:/Windows/win.ini)\n", "[x](%43%3A%5CWindows%5Cwin.ini)\n",
+                 "[x](//server/share/x.md)\n", "[x](C:Windows/win.ini)\n")
+        with mock.patch.object(Path, "resolve", resolve_without_host):
+            for link in links:
+                with self.assertRaises(ValueError) as caught:
+                    self.check(link)
+                self.assertIn("Reference leaves skill", str(caught.exception))
+
     def test_external_schemes_are_still_skipped(self):
         body = ("[a](http://example.invalid/x.md)\n\n[b](https://example.invalid/x.md)\n\n"
                 "[c](mailto:someone@example.invalid)\n\n[d](ftp://example.invalid/x)\n\n"

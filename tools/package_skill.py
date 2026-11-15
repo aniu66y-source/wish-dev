@@ -619,6 +619,16 @@ def markdown_links(source):
         index += 1
 
 
+def _local_absolute(target):
+    """A drive letter (``C:/``, ``C:\\`` or drive-relative ``C:x``) or a root/UNC prefix.
+
+    Classified structurally, never through ``Path.resolve``: a Windows absolute
+    destination must be refused identically on every runner, where it would otherwise
+    look like an ordinary in-tree relative name on a POSIX filesystem.
+    """
+    return re.match(r"[A-Za-z]:|[/\\]", target)
+
+
 def validate(files):
     manifest = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     front = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", manifest, re.S)
@@ -677,26 +687,37 @@ def validate(files):
                     # only LOOK like schemes: they are local absolute paths and must hit
                     # the same containment check as their percent-encoded twin, never be
                     # silently skipped like http:/mailto: externals.
-                    local_absolute = re.match(r"[A-Za-z]:|[/\\]{2}", target)
-                    if target.startswith("#") or (local_absolute is None
-                                                  and re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target)):
+                    if target.startswith("#"):
                         continue
-                    if local_absolute:
-                        detail = "{} (original link target: {})".format(target, raw_target)
+                    if _local_absolute(target):
                         if example:
                             continue
-                        raise ValueError("Reference leaves skill: " + detail)
+                        raise ValueError("Reference leaves skill: {} (original link target: {})".format(target, raw_target))
+                    if re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+                        continue
                     target = target.split("#", 1)[0]
                     if not target:
                         continue
                     try:
                         target = unquote(target, encoding="utf-8", errors="strict")
+                    except (ValueError, OSError) as error:
+                        if example:
+                            continue
+                        raise ValueError("Invalid link destination: " + raw_target) from error
+                    # The percent-encoded twin of a local absolute destination decodes to
+                    # the same form, so classify it structurally too instead of asking the
+                    # host filesystem whether the decoded name is absolute.
+                    if _local_absolute(target):
+                        if example:
+                            continue
+                        raise ValueError("Reference leaves skill: {} (original link target: {})".format(target, raw_target))
+                    detail = "{} (original link target: {})".format(target, raw_target)
+                    try:
                         resolved = (path.parent / target).resolve()
                     except (ValueError, OSError) as error:
                         if example:
                             continue
                         raise ValueError("Invalid link destination: " + raw_target) from error
-                    detail = "{} (original link target: {})".format(target, raw_target)
                     if not resolved.is_relative_to(ROOT.resolve()):
                         if example:
                             continue

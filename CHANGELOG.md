@@ -4,6 +4,15 @@
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 并非每个版本条目都有独立「验证」行——2.3.14 记于「已知风险/行为评估未完成」、2.3.15 记于内联采样段落、2.3.16 记于「已知残留」；门禁与采样事实以各条目原文与 git 历史为准。
 
+## 2.4.1 — 2026-11-16（未发布）
+
+修复 2.4.0 在 Linux runner 上暴露的一处平台相关判定缺陷（CI `ci / check (ubuntu-latest, …)` 四组红、`windows-latest` 四组绿）；技能正文与打包文件集合不变。
+
+- **P1 链接包含性判定改为纯语法，不再依赖宿主文件系统**（[tools/package_skill.py](tools/package_skill.py)）：新增 `_local_absolute()`，把盘符（`C:/`、`C:\`、盘符相对 `C:x`）与前导 `/`、`\`（含 `//`、`\\` 两种 UNC）一律判为本地绝对路径，并在 `Path.resolve()` 之前对原始目标与百分号解码后的目标各判一次。原先包含性只由 `Path.resolve()` 决定：`%43%3A%5CWindows%5Cwin.ini` 在 Windows 上报 `Reference leaves skill`，在 Linux 上被当成仓库内相对文件名而报 `Missing packaged reference`；`\\server\share\x.md`（Markdown 转义后只剩单个前导反斜杠）同样分叉。
+- **回归**（[tools/test_package.py](tools/test_package.py)）：新增 `test_local_absolute_verdict_ignores_the_filesystem`，把 `Path.resolve` 替换成对这些路径直接抛 `AssertionError`，钉住「绝对路径判定必须先于文件系统查询」；`LocalAbsolutePathLinkTest` 共 10 条。
+
+- **版本与验证**：`SKILL.md` `metadata.version` 2.4.0 → 2.4.1（正文未改）。三门禁在本机（Windows 11 / Node 24.21.0 / Python 3.14.7）实测通过：`node --test tools/test_plan.mjs` 199 项全通过 0 跳过、`python -B -m unittest discover -s tools -p "test_*.py"` 85 项通过、`--check` exit 0（12 文件 / 47 内部链接 / 2 个 `.mjs` / 24 条契约锚点）。内部链接计数与 2.4.0 一致，未误伤正常相对链接。ubuntu 侧结论以 CI 复跑为准（本次修复的直接动因）。行为评估不触发（采样数 0）。
+
 ## 2.4.0 — 2026-11-15
 
 已正式发布：[v2.4.0](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.4.0)。
