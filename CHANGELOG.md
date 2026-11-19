@@ -6,14 +6,14 @@
 
 ## 2.4.2 — 2026-11-19
 
-待发布（本地提交；tag 与 Release 链接在推送后补记）。
+已正式发布：[v2.4.2](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.4.2)。
 
 对 2.4.1 的三条 P0 优化落地：CI 打包产物边界交叉验证、打包门禁契约锚点端到端与 `package()` 拒绝分支测试、打包与账本双引擎 CommonMark 容器模型对齐。不改 P0 硬规则、计划格式与模型行为指引；技能正文未改。
 
 - **P0-1 CI 新增打包产物边界步骤**（`[.github/workflows/ci.yml](.github/workflows/ci.yml)`）：第 4 步 `Packaging artifact boundary`（`shell: pwsh`，ubuntu/windows 两组 runner 均可用）先 `python -B tools/package_skill.py --output .ci/wish-dev-ci.zip` 产出三元组，再用与 Python 打包器不同的读取器（.NET `System.IO.Compression.ZipFile`）交叉验证：manifest.sha256 与 `Get-FileHash` 复算一致、zip 字节数等于 manifest.bytes、`.sha256` 文件内容为 `<sha>  wish-dev-ci.zip`、zip 条目集等于 manifest.files、全部条目带 `wish-dev/` 前缀且无盘符/绝对路径。`[.gitignore](.gitignore)` 新增 `.ci/`（CI 临时产物目录）。
 - **P0-2 契约锚点端到端与拒绝分支**（`[tools/test_package.py](tools/test_package.py)`）：新增 `RealContractAnchorGateTest`（不再 mock `contract_gaps`，对真实仓库跑 `main() --check`，断言 status 0 且 stdout JSON `skill_quality.contract_gaps` 为空）与 `PackageOutputRejectTest`（钉住 `package()` 三条拒绝分支：输出即打包资源、输出后缀非 .zip、输出落在资源目录内；仅 mock `validate`）。
 - **P0-3 双引擎 CommonMark 容器模型对齐**（`[tools/package_skill.py](tools/package_skill.py)`）：`masked_markdown` 按 `scripts/check-plan.mjs` 的容器模型重写（`_detect_containers`/`_peel_containers`/`_line_context`/`_fence_info` 取代 `_container_column`）：引用内围栏（含 `> - ~~~` 嵌套）识别为示例掩码；列表标记后 1–4 空格定内容列（≥5 只占 1 列，防修过头）；多行 HTML 注释的续行保持段落存活（注释内 4 空格续行仍是正文）；列表项内 5 空格 `~~~` 不开围栏。`ListContainerMaskTest` 新增 5 条对齐 check-plan 独享夹具（引用围栏、引用嵌套围栏、标记后 4 空格内容列、行内注释续行、列表项内缩进围栏样）；真实仓库 `--check` 内部链接计数保持 47 不变。
-- **版本与验证**：`SKILL.md` `metadata.version` 2.4.1 → 2.4.2（正文未改）。三门禁本机（Windows 11 / Python 3.14）实测通过：`node --test tools/test_plan.mjs` 199 项全通过、`python -B -m unittest discover -s tools -p "test_*.py"` 94 项通过（85 → 94，新增 9 条）、`--check` exit 0（12 文件 / 47 内部链接 / 24 条契约锚点）。CI 新步骤逻辑在本机 pwsh 复跑通过（12 条目全断言绿）；GitHub Actions 矩阵未复跑（未推送）。发布前 `versions` 维度记 1 条预期 WEAK（README「最新正式版」仍指 2.4.1，tag 后消除），与 2.4.0 先例一致。行为评估不触发（采样数 0）。
+- **版本与验证**：`SKILL.md` `metadata.version` 2.4.1 → 2.4.2（正文未改）。三门禁本机（Windows 11 / Python 3.14）实测通过：`node --test tools/test_plan.mjs` 199 项全通过、`python -B -m unittest discover -s tools -p "test_*.py"` 94 项通过（85 → 94，新增 9 条）、`--check` exit 0（12 文件 / 47 内部链接 / 24 条契约锚点）。CI 新步骤逻辑在本机 pwsh 复跑通过（12 条目全断言绿）；GitHub Actions 首跑含新第 4 步骤全 success（run 44551353139 main 八组矩阵、44551441132 与 44551361817 v2.4.2 tag）。行为评估不触发（采样数 0）。
 
 ## 2.4.1 — 2026-11-16
 
