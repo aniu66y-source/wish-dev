@@ -4,6 +4,8 @@
 # dist/ 仅为历史输出目录，新产物统一写到 packages/。
 dist/
 packages/
+# .ci/ is the scratch output dir for the CI packaging artifact-boundary step (workflows/ci.yml).
+.ci/
 _runtime/
 *.log
 __pycache__/

@@ -683,6 +683,38 @@ class ListContainerMaskTest(unittest.TestCase):
         result = self.check("段落第一行\n\n    [示例](missing.md)\n")
         self.assertEqual(result["internal_links_checked"], 0)
 
+    def test_quoted_fence_content_is_example(self):
+        result = self.check("> ~~~\n> [示例](missing.md)\n> ~~~\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_quoted_list_fence_content_is_example(self):
+        result = self.check("> - ~~~\n> - [示例](missing.md)\n> ~~~\n")
+        self.assertEqual(result["internal_links_checked"], 0)
+
+    def test_list_marker_four_spaces_is_content_column(self):
+        # CommonMark 5.2: exactly 4 spaces after a list marker stay the content column.
+        with self.assertRaises(ValueError) as caught:
+            self.check("-    [缺失](missing.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Missing packaged reference", message)
+        self.assertIn("original link target: missing.md", message)
+
+    def test_inline_comment_continuation_is_prose(self):
+        # A line inside a multi-line comment keeps the paragraph alive (CommonMark 4.6).
+        with self.assertRaises(ValueError) as caught:
+            self.check("段落第一行 <!-- 开始\n续行 -->\n    [缺失](missing.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Missing packaged reference", message)
+        self.assertIn("original link target: missing.md", message)
+
+    def test_indented_fence_like_in_list_does_not_open_fence(self):
+        # 5-space tildes inside a list item are item code, not a fence opener.
+        with self.assertRaises(ValueError) as caught:
+            self.check("- 复现步骤：\n-     ~~~\n-     npm test\n-     ~~~\n\n[缺失](missing2.md)\n")
+        message = str(caught.exception)
+        self.assertIn("Missing packaged reference", message)
+        self.assertIn("original link target: missing2.md", message)
+
 
 class LocalAbsolutePathLinkTest(unittest.TestCase):
     """A Windows drive letter or UNC prefix only LOOKS like a URI scheme: it is a local
@@ -855,6 +887,51 @@ class DanglingSymlinkTest(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             skill.validate(files)
         self.assertIn("Resource leaves repository", str(caught.exception))
+
+
+class RealContractAnchorGateTest(unittest.TestCase):
+    """The contract gate must pass end-to-end against the real repository, not only
+    through a mocked contract_gaps."""
+
+    def test_real_repository_passes_the_contract_gate(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", ["package_skill.py", "--check"]), \
+             contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            status = skill.main()
+        self.assertEqual(status, 0, stderr.getvalue())
+        self.assertEqual(json.loads(stdout.getvalue())["skill_quality"]["contract_gaps"], [])
+
+
+class PackageOutputRejectTest(unittest.TestCase):
+    """package() rejects outputs that would shadow a packaged resource or land
+    inside a resource directory."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(dir=os.environ.get("WISH_DEV_RUNTIME_ROOT"))
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.files = skill.resources()
+
+    def reject(self, output):
+        with mock.patch.object(skill, "validate",
+                               return_value={"name": "wish-dev", "version": "1.0.0"}):
+            with self.assertRaises(ValueError) as caught:
+                skill.package(self.files, {"name": "wish-dev", "version": "1.0.0"}, output)
+        return str(caught.exception)
+
+    def test_output_must_not_be_a_packaged_resource(self):
+        skill_md = Path(__file__).resolve().parent.parent / "SKILL.md"
+        message = self.reject(skill_md)
+        self.assertIn("Output must be a .zip outside skill resources", message)
+
+    def test_output_must_have_a_zip_suffix(self):
+        message = self.reject(self.tmp / "archive.dat")
+        self.assertIn("Output must be a .zip outside skill resources", message)
+
+    def test_output_must_not_land_inside_resource_dirs(self):
+        message = self.reject(skill.ROOT / "references" / "inner-package.zip")
+        self.assertIn("Do not write archives inside resource directories", message)
 
 
 if __name__ == "__main__":

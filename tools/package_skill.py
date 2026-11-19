@@ -371,94 +371,167 @@ def parse_frontmatter(body):
     return data
 
 
-def _container_column(expanded, base):
-    """The content column a blockquote/list marker chain establishes at or after base,
-    or None when the line carries no container marker.
+_FENCE_MARKER = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_CONTAINER_PREFIX = re.compile(
+    r"^ {0,3}(> ?|(?:[-*+]|\d{1,9}[.)])(?: (?= *$)| {1,4}(?! )| ))")
+_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(\s|$)")
+_QUOTE_MARKER = re.compile(r" {0,3}> ?")
 
-    CommonMark: the marker fixes its item's content indent, so a continuation indented
-    only to that column is prose, not document-level indented code. Up to three leading
-    spaces still belong to a nested marker; a list marker followed by five or more
-    spaces claims only one space and the rest indent code inside the item.
-    """
-    col = base
-    levels = 0
+
+def _expand_tabs(line):
+    """Tab to 4-space steps, matching scripts/check-plan.mjs expandLedgerTabs."""
+    out = []
+    width = 0
+    for char in line:
+        if char == "\t":
+            pad = 4 - width % 4
+            out.append(" " * pad)
+            width += pad
+        else:
+            out.append(char)
+            width += 1
+    return "".join(out)
+
+
+def _detect_containers(value):
+    """The quote/list container chain a line carries, and its content remainder."""
+    stack = []
+    rest = value
     while True:
-        lead = re.match(r" {0,3}", expanded[col:])[0]
-        body = expanded[col + len(lead):]
-        if body.startswith(">"):
-            col += len(lead) + 1
-            if expanded[col:col + 1] == " ":
-                col += 1
-            levels += 1
-            continue
-        marker = re.match(r"(?:[-+*]|\d{1,9}[.)])(?=[ ]|$)", body)
-        if marker is None:
+        match = _CONTAINER_PREFIX.match(rest)
+        if match is None:
             break
-        end = col + len(lead) + marker.end()
-        run = re.match(r" +", expanded[end:])
-        spaces = run[0] if run else ""
-        col = end + 1 if not spaces or len(spaces) >= 5 else end + len(spaces)
-        levels += 1
-    return col if levels else None
+        marker = match.group(1)
+        stack.append("quote" if marker.startswith(">") else len(match.group(0)))
+        rest = rest[match.end():]
+    return stack, rest
+
+
+def _peel_containers(value, stack):
+    """Strip a recorded container chain, or None when the line no longer carries it."""
+    rest = value
+    for level in stack:
+        if level == "quote":
+            match = _QUOTE_MARKER.match(rest)
+            if match is None:
+                return None
+            rest = rest[match.end():]
+        elif not rest.startswith(" " * level):
+            return None
+        else:
+            rest = rest[level:]
+    return rest
+
+
+def _line_context(value, containers):
+    """Peel the surviving containers, detect deeper ones, and report content indent."""
+    stack = list(containers)
+    while True:
+        rest = _peel_containers(value, stack)
+        if rest is not None or not stack:
+            break
+        stack.pop()
+    if rest is None:
+        rest = value
+    deeper, rest = _detect_containers(rest)
+    return rest, stack + deeper, len(rest) - len(rest.lstrip(" "))
+
+
+def _fence_info(line, containers):
+    """A fence opener/closer on the line: marker, tail and the containers it opened in."""
+    value = _expand_tabs(line)
+    if containers:
+        rest = _peel_containers(value, containers)
+        if rest is None:
+            return None
+        context = list(containers)
+    else:
+        context, rest = _detect_containers(value)
+    match = _FENCE_MARKER.match(rest)
+    if match is None:
+        return None
+    return match.group(1), match.group(2), context
 
 
 def masked_markdown(source):
     """Blank comments, fenced/indented blocks and inline code before checking links.
 
     Examples inside a fence and references inside an invisible comment are not links the
-    package must contain; requiring them made a documented sample fail the gate."""
-    def blank(match):
-        return re.sub(r"[^\n]", " ", match.group(0))
-    source = re.sub(r"<!--[\s\S]*?-->", blank, source)
+    package must contain; requiring them made a documented sample fail the gate. The
+    container model mirrors scripts/check-plan.mjs so both engines mask the same lines."""
     lines = source.split("\n")
-    fence, paragraph, indented = None, False, False
-    container = 0
+    fence = None
+    in_code = False
+    containers = []
+    paragraph = False
+    comment_open = False
     for index, line in enumerate(lines):
-        expanded = line.expandtabs(4)
-        # The first three spaces still belong to a marker. Indentation is measured
-        # relative to the open container's content column (list/blockquote, nested):
-        # four extra spaces past that column are code inside the item, fewer is prose.
-        indent = len(expanded) - len(expanded.lstrip(" "))
-        relative = indent - container
-        window = expanded if relative < 0 else expanded[container:]
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", window)
-        was_paragraph = paragraph
         if fence is not None:
-            # A closer has only whitespace after a same-character, long-enough run.
-            if (marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence)
-                    and not marker[2].strip(" \t")):
+            close = _fence_info(line, fence[2])
+            if (close is not None and close[0][0] == fence[0][0]
+                    and len(close[0]) >= len(fence[0]) and not close[1].strip()):
                 fence = None
+                paragraph = False
             lines[index] = " " * len(line)
-            paragraph = False
-        elif not line.strip():
-            paragraph = False
-        elif relative >= 4 and (indented or not paragraph):
-            # Indented code cannot interrupt a paragraph, unlike fenced code.
-            lines[index] = " " * len(line)
-            indented = True
-        elif marker and (marker[1][0] != "`" or "`" not in marker[2]):
-            fence = marker[1]
-            lines[index] = " " * len(line)
-            paragraph, indented = False, False
-        else:
-            column = _container_column(expanded, container if relative >= 0 else 0)
-            if column is not None:
-                container = column
-                rest = expanded[column:]
-                if not rest.strip():
-                    paragraph = False
-                elif len(rest) - len(rest.lstrip(" ")) >= 4:
-                    # A marker whose own content starts four spaces past the column
-                    # opens indented code inside the item (e.g. "-      x").
-                    lines[index] = " " * len(line)
-                    paragraph, indented = False, True
-                else:
-                    paragraph, indented = True, False
+            continue
+        if in_code:
+            # An indented-code region swallows everything on its indented lines.
+            if not line.strip() or _line_context(_expand_tabs(line), containers)[2] >= 4:
+                lines[index] = " " * len(line)
+                continue
+            in_code = False
+        # Blank the comment runs in place so link offsets in the source stay valid.
+        cursor = 0
+        out = []
+        had_open = False
+        while cursor < len(line):
+            if comment_open:
+                close = line.find("-->", cursor)
+                if close < 0:
+                    break
+                out.append(" " * (close + 3 - cursor))
+                cursor = close + 3
+                comment_open = False
             else:
-                paragraph, indented = True, False
-                if relative < 0 and not was_paragraph:
-                    # A dedented fresh block closes the old container.
-                    container = 0
+                open_at = line.find("<!--", cursor)
+                if open_at < 0:
+                    out.append(line[cursor:])
+                    break
+                out.append(line[cursor:open_at])
+                out.append(" " * 4)
+                had_open = True
+                comment_open = True
+                cursor = open_at + 4
+        value = "".join(out)
+        if not value.strip():
+            if not line.strip() and not had_open and not comment_open:
+                # A true blank line ends the paragraph but keeps its own text.
+                paragraph = False
+            else:
+                lines[index] = " " * len(line)
+                # Only a comment opening on this line interrupts the paragraph; a line
+                # inside a multi-line comment keeps it alive (CommonMark 4.6).
+                if had_open:
+                    paragraph = False
+            continue
+        rest, stack, rel = _line_context(_expand_tabs(value), containers)
+        marker = _FENCE_MARKER.match(rest)
+        if marker is not None and (marker.group(1)[0] != "`"
+                                   or "`" not in marker.group(2)):
+            # A fence opener: mask the line and remember the containers it opened in.
+            fence = (marker.group(1), marker.group(2), stack)
+            lines[index] = " " * len(line)
+            comment_open = False
+            paragraph = False
+            continue
+        if rel >= 4 and not paragraph:
+            # Indented code cannot interrupt a paragraph, unlike a fence.
+            in_code = True
+            lines[index] = " " * len(line)
+            continue
+        containers = stack
+        lines[index] = value
+        paragraph = _ATX_HEADING.match(rest) is None
     source = "\n".join(lines)
     # Exact-length backtick runs delimit inline code; escaped openers stay prose.
     index = 0

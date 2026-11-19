@@ -36,3 +36,31 @@ jobs:
         run: node --test tools/test_plan.mjs
       - name: Packaging tests
         run: python -B -m unittest discover -s tools -p "test_*.py"
+      - name: Packaging artifact boundary
+        # Independent cross-check of the packaging triple with a different reader
+        # (.NET ZipFile vs the Python packager) so a systemic packager bug cannot
+        # satisfy its own gate. Runs on both runner OSes via pwsh.
+        shell: pwsh
+        run: |
+          python -B tools/package_skill.py --output .ci/wish-dev-ci.zip
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $manifest = Get-Content .ci/wish-dev-ci.manifest.json -Raw | ConvertFrom-Json
+          $actual = (Get-FileHash .ci/wish-dev-ci.zip -Algorithm SHA256).Hash.ToLower()
+          if ($manifest.sha256 -ne $actual) { throw "manifest sha256 does not match archive" }
+          if ((Get-Item .ci/wish-dev-ci.zip).Length -ne $manifest.bytes) { throw "zip byte length differs from manifest" }
+          $recorded = (Get-Content .ci/wish-dev-ci.zip.sha256 -Raw).Trim()
+          if ($recorded -ne "$actual  wish-dev-ci.zip") { throw "checksum file does not match: $recorded" }
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path .ci/wish-dev-ci.zip).Path)
+          try {
+            $entries = @($zip.Entries | ForEach-Object { $_.FullName }) | Sort-Object
+            $want = @($manifest.files) | Sort-Object
+            if ($entries.Count -ne $want.Count) { throw "zip entry count $($entries.Count) != manifest $($want.Count)" }
+            for ($i = 0; $i -lt $entries.Count; $i++) {
+              $entry = $entries[$i]
+              if ($entry -ne $want[$i]) { throw "zip entry differs from manifest at index $i : $entry" }
+              if (-not $entry.StartsWith("wish-dev/")) { throw "entry escapes skill root: $entry" }
+              if ($entry -match ':') { throw "entry carries a drive letter or URI: $entry" }
+              if ($entry -match '^/') { throw "entry is absolute: $entry" }
+            }
+          } finally { $zip.Dispose() }
+          Write-Output ("packaging artifact boundary OK: " + $entries.Count + " entries")
