@@ -367,6 +367,16 @@ function worktreeContentId(repo, file) {
   return result.status === 0 ? result.stdout.trim() || null : null;
 }
 
+// A worktree fingerprint that also carries Git's normalized content id. The clean filters
+// (core.autocrlf, .gitattributes, eol) rewrite the bytes Git stores for a file: an autocrlf
+// checkout spells the same content with CRLF in the worktree but LF in the blob, so a
+// raw-byte digest alone never matches the index/committed layer and reads as a spurious
+// change. The content id is the one value both sides share.
+function worktreeFingerprint(root, rel) {
+  const fingerprint = fingerprintPath(root, rel);
+  return {...fingerprint, contentId: fingerprint.status === 'ok' ? worktreeContentId(root, rel) : null};
+}
+
 // Content view is the single place that decides "can this be shown completely?".
 // `complete` is false for binary, oversized, truncated and unreadable content, and the
 // caller records exactly one integrity entry for it.
@@ -741,13 +751,13 @@ function snapshot(repo, options) {
     trackedFiles = new Set([...index.keys(), ...tree.keys()]).size;
     for (const entry of statusEntries(root)) {
       if (entry.x === '?') {
-        state.untracked[entry.file] = fingerprintPath(root, entry.file);
+        state.untracked[entry.file] = worktreeFingerprint(root, entry.file);
         continue;
       }
       state.dirty[entry.file] = {
         index: index.get(entry.file) ?? null,
         head: tree.get(entry.file) ?? (base ? resolveBlob(root, base, entry.file) : null),
-        worktree: fingerprintPath(root, entry.file),
+        worktree: worktreeFingerprint(root, entry.file),
       };
       // A rename/copy reports only the new path. The old path is already absent from the
       // index and worktree at snapshot time, so without its own record collect would read the
@@ -756,7 +766,7 @@ function snapshot(repo, options) {
         state.dirty[entry.from] = {
           index: index.get(entry.from) ?? null,
           head: tree.get(entry.from) ?? (base ? resolveBlob(root, base, entry.from) : null),
-          worktree: fingerprintPath(root, entry.from),
+          worktree: worktreeFingerprint(root, entry.from),
         };
       }
     }
@@ -1049,6 +1059,12 @@ function renderMaterial({root, requested, options, gitMode, baseInfo, currentHea
         if (entry.index && wt) {
           const idx = blobView(root, entry.index).fingerprint;
           if (!idx || idx.status !== 'ok') unexplainedGap.push(file);
+          else if (typeof wt.contentId === 'string') {
+            // Newer snapshots carry the baseline worktree's content id; against the index
+            // blob it is the autocrlf-safe comparison (both Git hashes of the normalized
+            // content). A null/absent field falls back to the legacy raw-byte compare.
+            (wt.contentId === idx.blob ? stagedDuringTask : preExistingGap).push(file);
+          }
           else if (idx.sha256 === wt.sha256) stagedDuringTask.push(file);
           else preExistingGap.push(file);
         } else if (!entry.index && wt) {
@@ -1393,6 +1409,22 @@ function collect(repo, options) {
     const comparable = before && before.status === 'clean'
       ? (id => (id ? {status: 'ok', sha256: id, size: null} : {status: 'unreadable', sha256: null, size: null}))(worktreeContentId(root, change.file))
       : before;
+    // An index/committed layer against a raw-bytes (untracked/dirty) baseline must compare in
+    // Git content-id space: clean filters (core.autocrlf, .gitattributes) rewrite the bytes
+    // Git stores, so a raw worktree digest never matches the normalized layer blob under
+    // autocrlf and would manufacture a spurious "mixed". Newer snapshots carry the baseline's
+    // content id; legacy snapshots lack the field and fall through to the raw comparison.
+    if (['index', 'committed'].includes(change.layer) && change.kind !== 'deleted'
+      && before && before.status === 'ok' && before.contentId !== undefined) {
+      const layerFp = change.view.fingerprint;
+      if (before.contentId === null || layerFp.status !== 'ok') {
+        return {attribution: 'unknown', note: '缺少可比较的内容摘要（大文件或不可读）'};
+      }
+      if (before.contentId === layerFp.blob) {
+        return {attribution: 'pre-existing', note: '内容与任务开始时一致，仅位置/状态变化'};
+      }
+      return {attribution: 'mixed', note: '任务开始时已有改动，当前内容与任务开始时不同'};
+    }
     if (sameState(comparable, change.view.fingerprint)) {
       return {attribution: 'pre-existing', note: '内容与任务开始时一致，仅位置/状态变化'};
     }

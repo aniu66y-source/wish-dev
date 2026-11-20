@@ -1581,6 +1581,58 @@ test('a clean tracked baseline is compared by Git content id, not by raw bytes',
   } finally { wipe(dir, snap, out); }
 });
 
+// ---- 第十二轮全量审查修复（2.4.3，N-1 与 S-1 旁支）-----------------------------
+
+test('an untracked CRLF file staged during the task keeps pre-existing attribution', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, git, write} = initRepo({'clean.txt': 'clean\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-n1-untracked-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-n1-untracked-material.md');
+  try {
+    // autocrlf rewrites the bytes Git stores for an untracked file (CRLF in the worktree,
+    // LF in the staged blob): a baseline that recorded raw worktree bytes never matched the
+    // normalized layer and read as a spurious "mixed". The baseline now carries Git's
+    // content id, the one value both sides share.
+    git('config', 'core.autocrlf', 'true');
+    write('notes.txt', 'note one\r\nnote two\r\n');
+    assert.ok(fs.readFileSync(path.join(dir, 'notes.txt'), 'utf8').includes('\r\n'),
+      'the file must be CRLF for this test to mean anything');
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'notes.txt']);
+    git('add', 'notes.txt');
+    const staged = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap, '--scope', 'notes.txt']);
+    assert.deepEqual(staged.task, [], 'unchanged content may not be charged to the task');
+    assert.deepEqual(staged.pre_existing.map(entry => entry.file), ['notes.txt'],
+      'the staging-only change stays attributed to the task start');
+    assert.equal(staged.pre_existing_also_modified.length, 0, 'no mixed attribution may survive');
+    assert.ok(!materialOf(out).includes('当前内容与任务开始时不同'), 'no spurious mixed note');
+    assert.ok(materialOf(out).includes('内容与任务开始时一致'), 'the pre-existing note explains the staging-only change');
+  } finally { wipe(dir, snap, out); }
+});
+
+test('a dirty CRLF file staged during the task keeps pre-existing attribution', t => {
+  if (!hasGit) { t.skip('git unavailable'); return; }
+  const {dir, git, write} = initRepo({'clean.txt': 'clean\n'});
+  const snap = path.join(workRoot(), path.basename(dir) + '-n1-dirty-snap.json');
+  const out = path.join(workRoot(), path.basename(dir) + '-n1-dirty-material.md');
+  try {
+    // The worktree already differs from the index at task start (dirty baseline). Staging it
+    // during the task moves the index layer while the content is still the task-start
+    // content, so the attribution must stay pre-existing instead of the autocrlf "mixed".
+    git('config', 'core.autocrlf', 'true');
+    write('clean.txt', 'clean extra\r\n');
+    assert.ok(fs.readFileSync(path.join(dir, 'clean.txt'), 'utf8').includes('\r\n'),
+      'the file must be CRLF for this test to mean anything');
+    runOk(['snapshot', '--repo', dir, '--out', snap, '--scope', 'clean.txt']);
+    git('add', 'clean.txt');
+    const staged = runOk(['collect', '--repo', dir, '--out', out, '--snapshot', snap, '--scope', 'clean.txt']);
+    assert.deepEqual(staged.task, [], 'unchanged content may not be charged to the task');
+    assert.deepEqual(staged.pre_existing.map(entry => entry.file), ['clean.txt'],
+      'the staging-only change stays attributed to the task start');
+    assert.equal(staged.pre_existing_also_modified.length, 0, 'no mixed attribution may survive');
+    assert.ok(!materialOf(out).includes('当前内容与任务开始时不同'), 'no spurious mixed note');
+  } finally { wipe(dir, snap, out); }
+});
+
 test('a link present at snapshot time is compared by its own target only', t => {
   if (!hasGit) { t.skip('git unavailable'); return; }
   const base = fs.mkdtempSync(path.join(workRoot(), 'gitsnap-link-'));
