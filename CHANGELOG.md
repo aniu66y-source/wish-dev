@@ -6,7 +6,7 @@
 
 ## 2.4.3 — 2026-11-20
 
-待发布（本地提交；tag 与 Release 链接在推送后补记）。
+已正式发布：[v2.4.3](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.4.3)。
 
 第十一轮全量代码审查（对 2.4.2）确认 3 项低危缺陷并修复；第十二轮（对修复提交 `32f9367`）确认 1 项低危缺陷（N-1，autocrlf 下未跟踪/脏基线假 mixed）并修复，另 2 项疑似（S-1 同源旁支随 N-1 一并修复、S-2 经评估为保守降级不修），两轮共 12 项审查疑点经复核为误报（含「块目录隐藏文件静默跳过」为设计行为、CI 与本地三条门禁约定逐条一致等）。不改 P0 硬规则、计划格式与模型行为指引；技能正文未改。
 
@@ -15,7 +15,7 @@
 - **T1 `reject()` 弱断言收紧**（[tools/test_plan.mjs](tools/test_plan.mjs)）：助手原先只断言「有错」，约 28 个拒绝用例不核对错误内容。现助手接受期望错误子串（经探针实测的真实报错文案），全部调用点补齐，防未来修复改错时静默通过。
 - **N-1 autocrlf 归一化导致未跟踪/脏基线假 mixed**（[scripts/review-material.mjs](scripts/review-material.mjs)）：快照侧对 untracked/dirty 基线记录工作区原始字节 sha256，而索引/提交层视图记录经 clean 过滤器归一化的 blob 摘要；`core.autocrlf=true` 下原始 CRLF 摘要与归一化 LF 摘要必不等，工作区字节未变也报「任务开始时已有改动，当前内容与任务开始时不同（mixed）」（第十二轮全量审查确认，探针端到端复现）。现快照对 untracked/dirty 条目同时记录 Git 内容 id（`git hash-object` 经 clean 过滤器后的 blob hash，两侧共有的比较口径），归属与第 3 节索引差异分类均在内容 id 空间比对；旧快照缺该字段时回退原始字节比较（向后兼容）。同源旁支 S-1（第 3 节 `stagedDuringTask`/`preExistingGap` 分类）随同一字段对齐修复；S-2（`readSnapshot` 不校验条目形状，仅手工篡改基线可达，降级方向保守、不漏报）本轮不修。
 - **回归测试**（[tools/test_plan.mjs](tools/test_plan.mjs)）：新增 5 条钉住 R1、C1 与 N-1 修复——Git 快照报告非零 tracked 数（2 文件提交 → 2）、无提交仓库按暂存索引计数（1 个 staged 文件 → 1）、畸形 story id 不再掩盖其验收引用未覆盖（报 AC-02 uncovered）、未跟踪 CRLF 文件任务期间暂存与脏基线 CRLF 文件任务期间暂存均保持 pre-existing 归属且材料无假 mixed 注记。测试套件 199 → 204。
-- **版本与验证**：`SKILL.md` `metadata.version` 2.4.2 → 2.4.3（正文未改）。三门禁本机（Windows 11 / Node 24.21.0 / Python 3.14.7）实测通过：`node --test tools/test_plan.mjs` 204 项全通过 0 失败（199 → 204，新增 5 条）、`python -B -m unittest discover -s tools -p "test_*.py"` 94 项 OK、`--check` exit 0（12 文件 / 47 内部链接 / 2 个 `.mjs` / 24 条契约锚点）。GitHub Actions 矩阵未复跑（未推送），本条不预先引用 run 号。发布前 `versions` 维度记 1 条预期 WEAK（README「最新正式版」仍指 2.4.2，tag 后消除），与 2.4.2 先例一致。行为评估不触发（未改 P0 硬规则，采样数 0）。
+- **版本与验证**：`SKILL.md` `metadata.version` 2.4.2 → 2.4.3（正文未改）。三门禁本机（Windows 11 / Node 24.21.0 / Python 3.14.7）实测通过：`node --test tools/test_plan.mjs` 204 项全通过 0 失败（199 → 204，新增 5 条）、`python -B -m unittest discover -s tools -p "test_*.py"` 94 项 OK、`--check` exit 0（12 文件 / 47 内部链接 / 2 个 `.mjs` / 24 条契约锚点）。GitHub Actions 全 success（run 44670957914 main 八组矩阵；44670967309 v2.4.3 tag）。发布前 `versions` 维度记 1 条预期 WEAK（README「最新正式版」仍指 2.4.2，tag 后消除），与 2.4.2 先例一致。行为评估不触发（未改 P0 硬规则，采样数 0）。
 
 ## 2.4.2 — 2026-11-19
 
