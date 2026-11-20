@@ -21,15 +21,15 @@ const fixture=()=>({
   stories:[{id:'T-1-01',title:'保存功能',status:'pending',attempts:0,allowed_files:['src/**'],accept_refs:['AC-01'],verify:[{kind:'command',run:'npm test'}]}]
 });
 const done=p=>{Object.assign(p.stories[0],{status:'done',context_id:'actual-run-01',evidence:['evidence/save.json'],review:{context_id:'actual-review-02',spec:'pass',quality:'pass'}});return p;};
-const reject=(name,change)=>test(name,()=>{const p=fixture();change(p);assert.ok(validatePlan(p).length>0);});
+const reject=(name,change,expect)=>test(name,()=>{const p=fixture();change(p);const errors=validatePlan(p);assert.ok(errors.some(e=>e.includes(expect)),'expected "'+expect+'" in errors, got: '+JSON.stringify(errors));});
 test('dynamic package count has no implicit ceiling',()=>{const p=fixture();p.stories=Array.from({length:20},(_,i)=>({...structuredClone(p.stories[0]),id:`T-1-${String(i+1).padStart(2,'0')}`}));assert.deepEqual(validatePlan(p),[]);});
 test('independent real host context identifiers need not be subagent sessions',()=>assert.deepEqual(validatePlan(done(fixture())),[]));
 test('legacy WP ids remain readable',()=>{const p=done(fixture());p.stories[0].id='WP-01';assert.deepEqual(validatePlan(p),[]);});
 test('legacy S ids and distinct session ids remain readable',()=>{const p=done(fixture());p.stories[0].id='S-01';delete p.stories[0].context_id;delete p.stories[0].review.context_id;p.stories[0].sessionId='ses_impl';p.stories[0].review.sessionId='ses_review';assert.deepEqual(validatePlan(p),[]);});
-reject('explicit task budget still limits scope',p=>{p.budget.max_tasks=1;p.stories.push({...p.stories[0],id:'T-1-02'});});
-reject('invalid task budget is rejected',p=>p.budget.max_tasks=0);
-reject('repair budget cannot be exceeded',p=>p.stories[0].attempts=4);
-reject('a pending package at the repair limit must be blocked or the budget raised',p=>p.stories[0].attempts=3);
+reject('explicit task budget still limits scope',p=>{p.budget.max_tasks=1;p.stories.push({...p.stories[0],id:'T-1-02'});},'stories exceed budget.max_tasks');
+reject('invalid task budget is rejected',p=>p.budget.max_tasks=0,'budget.max_tasks must be a positive integer');
+reject('repair budget cannot be exceeded',p=>p.stories[0].attempts=4,'attempts exceeds retry budget');
+reject('a pending package at the repair limit must be blocked or the budget raised',p=>p.stories[0].attempts=3,'has reached the repair budget');
 test('verifying and blocked packages may sit at the repair limit',()=>{
   for(const status of ['verifying','blocked']){const p=fixture();p.stories[0].status=status;p.stories[0].attempts=3;assert.deepEqual(validatePlan(p),[],status);}
 });
@@ -114,31 +114,32 @@ test('allowed_files is a write scope and a read-only task declares none',()=>{
   assert.ok(validatePlan(claimsWrites).some(e=>e.includes('read_only must not declare')));
 });
 test('evidence prefix is case-insensitive for Windows paths',()=>{const p=done(fixture());p.stories[0].evidence=['Evidence/save.json'];assert.deepEqual(validatePlan(p),[]);});
-reject('duplicate acceptance id',p=>p.acceptance.push({...p.acceptance[0]}));
-reject('uncovered acceptance',p=>p.acceptance.push({id:'AC-02',text:'导出'}));
+reject('duplicate acceptance id',p=>p.acceptance.push({...p.acceptance[0]}),'duplicate acceptance id');
+reject('uncovered acceptance',p=>p.acceptance.push({id:'AC-02',text:'导出'}),'uncovered acceptance criterion: AC-02');
+reject('a malformed story id leaves its own criteria uncovered',p=>{p.stories[0].id='BAD-01';p.acceptance.push({id:'AC-02',text:'导出'});p.stories[0].accept_refs=['AC-01','AC-02'];},'uncovered acceptance criterion: AC-02');
 test('uncovered criterion error names the id',()=>{const p=fixture();p.acceptance.push({id:'AC-02',text:'导出'});assert.ok(validatePlan(p).some(e=>e==='uncovered acceptance criterion: AC-02'));});
-reject('duplicate package id',p=>p.stories.push({...p.stories[0]}));
-reject('array is not an id',p=>p.stories[0].id=['T-1-01']);
-reject('research cannot be uninspected',p=>p.research.status='pending');
-reject('README alone is insufficient',p=>p.research.candidates[0].code_refs=[p.research.candidates[0].code_refs[0].replace('templates/commands/plan.md?plain=1#L1','README.md')]);
-reject('encoded README alone is insufficient',p=>p.research.candidates[0].code_refs=[p.research.candidates[0].code_refs[0].replace('templates/commands/plan.md?plain=1#L1','%52EADME.md')]);
-reject('different revision is rejected',p=>p.research.candidates[0].revision='a'.repeat(40));
-reject('array is not a source link',p=>p.research.candidates[0].code_refs=[p.research.candidates[0].code_refs]);
-reject('source URLs cannot carry credentials',p=>p.research.candidates[0].url='https://user:secret@github.com/github/spec-kit');
-reject('unsupported source URL query',p=>p.research.candidates[0].code_refs[0]=p.research.candidates[0].code_refs[0].replace('?plain=1','?plain=1&x=1'));
-reject('architecture cannot omit concurrency',p=>delete p.architecture.concurrency);
-reject('load balancing needs a scale trigger when inapplicable',p=>delete p.architecture.load_balancing.scale_trigger);
-reject('unknown dependency',p=>p.stories[0].depends_on=['T-9-01']);
-reject('cyclic dependency',p=>{p.stories[0].depends_on=['T-1-02'];p.stories.push({...p.stories[0],id:'T-1-02',depends_on:['T-1-01']});});
-reject('dependent writer cannot start before prerequisites pass',p=>{p.stories.push({...p.stories[0],id:'T-1-02',depends_on:['T-1-01'],status:'running'});});
-reject('done needs actual evidence references',p=>{done(p);p.stories[0].evidence=[];});
-reject('same context is not independent review',p=>{done(p);p.stories[0].review.context_id='actual-run-01';});
-reject('review cannot reuse the implementation session under another field',p=>{done(p);p.stories[0].sessionId='ses_same';p.stories[0].review.context_id='ses_same';});
-reject('any review identifier matching the implementation is rejected',p=>{done(p);p.stories[0].review.sessionId='actual-run-01';});
-reject('review identifier matching the implementation by case is the same context',p=>{done(p);p.stories[0].review.context_id='ACTUAL-RUN-01';});
-reject('missing quality review',p=>{done(p);p.stories[0].review.quality='fail';});
-reject('evidence cannot escape its root',p=>{done(p);p.stories[0].evidence=['evidence/../data'];});
-reject('absolute evidence paths are rejected',p=>{done(p);p.stories[0].evidence=['C:/secret'];});
+reject('duplicate package id',p=>p.stories.push({...p.stories[0]}),'duplicate story id');
+reject('array is not an id',p=>p.stories[0].id=['T-1-01'],'stories[0].id must be a string matching T-2-01');
+reject('research cannot be uninspected',p=>p.research.status='pending','research.status must be complete');
+reject('README alone is insufficient',p=>p.research.candidates[0].code_refs=[p.research.candidates[0].code_refs[0].replace('templates/commands/plan.md?plain=1#L1','README.md')],'beyond README');
+reject('encoded README alone is insufficient',p=>p.research.candidates[0].code_refs=[p.research.candidates[0].code_refs[0].replace('templates/commands/plan.md?plain=1#L1','%52EADME.md')],'beyond README');
+reject('different revision is rejected',p=>p.research.candidates[0].revision='a'.repeat(40),'at the same repository and commit');
+reject('array is not a source link',p=>p.research.candidates[0].code_refs=[p.research.candidates[0].code_refs],'at the same repository and commit');
+reject('source URLs cannot carry credentials',p=>p.research.candidates[0].url='https://user:secret@github.com/github/spec-kit','url must be a GitHub repository URL');
+reject('unsupported source URL query',p=>p.research.candidates[0].code_refs[0]=p.research.candidates[0].code_refs[0].replace('?plain=1','?plain=1&x=1'),'only plain=1 is allowed as a query');
+reject('architecture cannot omit concurrency',p=>delete p.architecture.concurrency,'architecture.concurrency.applicable must be boolean');
+reject('load balancing needs a scale trigger when inapplicable',p=>delete p.architecture.load_balancing.scale_trigger,'architecture.load_balancing.scale_trigger must be a non-empty string');
+reject('unknown dependency',p=>p.stories[0].depends_on=['T-9-01'],'invalid or unknown task');
+reject('cyclic dependency',p=>{p.stories[0].depends_on=['T-1-02'];p.stories.push({...p.stories[0],id:'T-1-02',depends_on:['T-1-01']});},'contains a cycle');
+reject('dependent writer cannot start before prerequisites pass',p=>{p.stories.push({...p.stories[0],id:'T-1-02',depends_on:['T-1-01'],status:'running'});},'must be done before this task starts');
+reject('done needs actual evidence references',p=>{done(p);p.stories[0].evidence=[];},'evidence is required for done');
+reject('same context is not independent review',p=>{done(p);p.stories[0].review.context_id='actual-run-01';},'separate actual context');
+reject('review cannot reuse the implementation session under another field',p=>{done(p);p.stories[0].sessionId='ses_same';p.stories[0].review.context_id='ses_same';},'separate actual context');
+reject('any review identifier matching the implementation is rejected',p=>{done(p);p.stories[0].review.sessionId='actual-run-01';},'separate actual context');
+reject('review identifier matching the implementation by case is the same context',p=>{done(p);p.stories[0].review.context_id='ACTUAL-RUN-01';},'separate actual context');
+reject('missing quality review',p=>{done(p);p.stories[0].review.quality='fail';},'separate actual context');
+reject('evidence cannot escape its root',p=>{done(p);p.stories[0].evidence=['evidence/../data'];},'evidence must stay under evidence/');
+reject('absolute evidence paths are rejected',p=>{done(p);p.stories[0].evidence=['C:/secret'];},'evidence must stay under evidence/');
 test('next action starts the ready package without asking to continue',()=>assert.deepEqual(nextActions(fixture()),[{action:'execute',task_id:'T-1-01'}]));
 test('running tasks are observed, never redispatched',()=>{const p=fixture();p.stories[0].status='running';assert.deepEqual(nextActions(p),[{action:'observe',task_id:'T-1-01'}]);});
 test('returned implementation advances to review',()=>{const p=fixture();p.stories[0].status='verifying';assert.deepEqual(nextActions(p),[{action:'review',task_id:'T-1-01'}]);});
@@ -1294,6 +1295,33 @@ const runOk = args => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return JSON.parse(result.stdout);
 };
+test('a git snapshot reports the tracked file count instead of zero',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir}=initRepo({'src/a.js':'const a=1\n','docs/note.md':'note\n'});
+  const snap=path.join(workRoot(),path.basename(dir)+'-tracked.json');
+  try{
+    const result=runTool(['snapshot','--repo',dir,'--out',snap]);
+    assert.equal(result.status,0,result.stdout);
+    assert.equal(JSON.parse(result.stdout).tracked_files,2,'tracked = index ∪ HEAD tree, untracked stay out');
+  }finally{
+    fs.rmSync(snap,{force:true});
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+});
+test('a commit-less git snapshot counts the staged index alone',t=>{
+  if(!hasGit){t.skip('git unavailable');return;}
+  const {dir,git,write}=initRepo({});
+  write('src/staged.js','const s=1\n');git('add','src/staged.js');
+  const snap=path.join(workRoot(),path.basename(dir)+'-tracked0.json');
+  try{
+    const result=runTool(['snapshot','--repo',dir,'--out',snap]);
+    assert.equal(result.status,0,result.stdout);
+    assert.equal(JSON.parse(result.stdout).tracked_files,1,'no HEAD tree: the staged index alone decides');
+  }finally{
+    fs.rmSync(snap,{force:true});
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+});
 // A configured filter on a tracked file outside the requested scope must be detected
 // before Git can run its command, even when merely inspecting repository status.
 for (const operation of ['snapshot', 'collect']) {

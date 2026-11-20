@@ -4,6 +4,18 @@
 按 git 历史如实记录：仓库**不存在 v2.1.1** 的提交或 tag（直接跳至 v2.2.0）；**v2.3.2 未单独发布**（无 tag，仅提交 `6845204` 的 SKILL.md 版本号曾标 2.3.2），其内容已并入 2.3.3。
 并非每个版本条目都有独立「验证」行——2.3.14 记于「已知风险/行为评估未完成」、2.3.15 记于内联采样段落、2.3.16 记于「已知残留」；门禁与采样事实以各条目原文与 git 历史为准。
 
+## 2.4.3 — 2026-11-20
+
+待发布（本地提交；tag 与 Release 链接在推送后补记）。
+
+第十一轮全量代码审查（对 2.4.2）确认 3 项低危缺陷并修复；0 项疑似，6 项审查疑点经复核为误报（含「块目录隐藏文件静默跳过」为设计行为、CI 与本地三条门禁约定逐条一致等）。不改 P0 硬规则、计划格式与模型行为指引；技能正文未改。
+
+- **R1 Git 快照 `tracked_files` 恒 0**（[scripts/review-material.mjs](scripts/review-material.mjs)）：快照结构 JSON 的 `tracked_files` 取自 `state.files`，但该字段仅在非 Git 分支由 `manifest()` 填充，Git 模式恒为 `{ }`，导致结果 JSON 报 0。现按模式分别计数：Git 模式 = 索引 ∪ HEAD 树（无提交仓库仅索引）的文件数，非 Git = 清单条目数；JSON 的 `files: { }` 形状不变（Git 模式下文件明细本就不内联，该字段仅承载计数）。
+- **C1 畸形 story 的验收引用掩盖覆盖缺口**（[scripts/check-plan.mjs](scripts/check-plan.mjs)）：id 不合法的 story 其合法 `accept_refs` 仍计入覆盖集合，吞掉「uncovered acceptance criterion」报错（门禁本身仍 fail-closed，只是诊断不完整）。现覆盖集合只计入合法 id 的 story（与任务地图口径一致）；畸形 id 的引用连同「uncovered」一并报错。
+- **T1 `reject()` 弱断言收紧**（[tools/test_plan.mjs](tools/test_plan.mjs)）：助手原先只断言「有错」，约 28 个拒绝用例不核对错误内容。现助手接受期望错误子串（经探针实测的真实报错文案），全部调用点补齐，防未来修复改错时静默通过。
+- **回归测试**（[tools/test_plan.mjs](tools/test_plan.mjs)）：新增 3 条钉住 R1 与 C1 修复——Git 快照报告非零 tracked 数（2 文件提交 → 2）、无提交仓库按暂存索引计数（1 个 staged 文件 → 1）、畸形 story id 不再掩盖其验收引用未覆盖（报 AC-02 uncovered）。测试套件 199 → 202。
+- **版本与验证**：`SKILL.md` `metadata.version` 2.4.2 → 2.4.3（正文未改）。三门禁本机（Windows 11 / Node 24.21.0 / Python 3.14.7）实测通过：`node --test tools/test_plan.mjs` 202 项全通过 0 失败（199 → 202，新增 3 条）、`python -B -m unittest discover -s tools -p "test_*.py"` 94 项 OK、`--check` exit 0（12 文件 / 47 内部链接 / 2 个 `.mjs` / 24 条契约锚点）。GitHub Actions 矩阵未复跑（未推送），本条不预先引用 run 号。发布前 `versions` 维度记 1 条预期 WEAK（README「最新正式版」仍指 2.4.2，tag 后消除），与 2.4.2 先例一致。行为评估不触发（未改 P0 硬规则，采样数 0）。
+
 ## 2.4.2 — 2026-11-19
 
 已正式发布：[v2.4.2](https://github.com/aniu66y-source/wish-dev/releases/tag/v2.4.2)。

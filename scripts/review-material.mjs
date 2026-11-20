@@ -732,9 +732,13 @@ function snapshot(repo, options) {
     untracked: {},
     files: {},
   };
+  let trackedFiles;
   if (gitMode) {
     const index = indexBlobs(root);
     const tree = base ? treeBlobs(root, base) : new Map();
+    // Tracked = the files Git knows about: the index plus the HEAD tree (untracked files
+    // stay out of this count; a repo without commits has no HEAD tree, so the index alone).
+    trackedFiles = new Set([...index.keys(), ...tree.keys()]).size;
     for (const entry of statusEntries(root)) {
       if (entry.x === '?') {
         state.untracked[entry.file] = fingerprintPath(root, entry.file);
@@ -758,6 +762,7 @@ function snapshot(repo, options) {
     }
   } else {
     state.files = manifest(root, {skipGit: true});
+    trackedFiles = Object.keys(state.files).length;
   }
   publishExclusive(options.out, JSON.stringify(state, null, 2) + '\n');
   return {
@@ -771,7 +776,7 @@ function snapshot(repo, options) {
     scope_mode: state.scope_mode,
     dirty_files: Object.keys(state.dirty).sort(),
     untracked_files: Object.keys(state.untracked).sort(),
-    tracked_files: Object.keys(state.files).length,
+    tracked_files: trackedFiles,
   };
 }
 

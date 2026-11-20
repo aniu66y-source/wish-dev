@@ -76,7 +76,8 @@ export function validatePlan(plan) {
   stories.forEach((s,i)=>{
     const prefix=`stories[${i}]`;
     if(!object(s)){errors.push(prefix+' must be an object');return;}
-    if(!storyId(s.id))errors.push(prefix+'.id must be a string matching T-2-01, or legacy WP-01/S-01');
+    const ownId=storyId(s.id);
+    if(!ownId)errors.push(prefix+'.id must be a string matching T-2-01, or legacy WP-01/S-01');
     else{if(ids.has(s.id))errors.push('duplicate story id');ids.add(s.id);}
     requireText(s.title,prefix+'.title');
     // allowed_files is the writable scope only. A read-only task declares read_only and
@@ -94,7 +95,9 @@ export function validatePlan(plan) {
     // may not be dispatched again.
     else if(s.attempts>=budget.max_fix_attempts&&s.status==='pending')errors.push(prefix+'.attempts has reached the repair budget; mark it blocked or raise budget.max_fix_attempts (a running final fix may finish)');
     if(!Array.isArray(s.accept_refs)||!s.accept_refs.length)errors.push(prefix+'.accept_refs must not be empty');
-    else for(const id of s.accept_refs){if(!criterionId(id)||!criteria.has(id))errors.push(prefix+'.accept_refs contains an invalid or unknown criterion');else covered.add(id);}
+    // Coverage counts only from stories with a valid id: a malformed story must not silently
+    // cover an acceptance criterion, or its id error would mask the resulting coverage gap.
+    else for(const id of s.accept_refs){if(!criterionId(id)||!criteria.has(id))errors.push(prefix+'.accept_refs contains an invalid or unknown criterion');else if(ownId)covered.add(id);}
     if(!Array.isArray(s.verify)||!s.verify.length)errors.push(prefix+'.verify must contain an executable or observable check');
     else s.verify.forEach((v,n)=>{
       const p=prefix+`.verify[${n}]`;
